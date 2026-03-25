@@ -81,7 +81,7 @@
 <div id="addPage" class="page active-page">
     <div class="card">
         <h2 style="margin:0 0 10px 0;">📥 拍照入庫</h2>
-        <input type="file" id="cameraInput" accept="image/*">
+        <input type="file" id="cameraInput" accept="image/*" capture="environment">
         <img id="preview" style="width:100%; border-radius:10px; display:none; margin-top:10px;" onerror="this.src='https://via.placeholder.com/300?text=圖片載入失敗'">
         <input type="text" id="inCommName" list="commList" placeholder="💬 社群 ID(必填)">
 <datalist id="commList"></datalist>
@@ -197,15 +197,29 @@
     <div class="nav-item" onclick="showPage('listPage', this); prepareInventoryList();"><span>📋</span><span>紀錄</span></div>
     <div class="nav-item" onclick="showPage('pickPage', this); preparePickList();"><span>🛒</span><span>檢貨</span></div>
 </div>
-
 <script>
     const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymfSDnNMRJ_VRkkV2leUbxllWgkV5sen9HPBWqeRK4wcEUfeEPqiScJl93Ljkt8k68UA/exec"; 
     let rawStockData = [];
     let tempPickList = [];
     let compressedImageData = "";
     
+    // --- 效能優化變數 ---
+    let lastFetchTime = 0;
+    const CACHE_DURATION = 20000; 
+    
     const partners = ["萌寶目錄預購","東京速換金","妮小舖","NAZI夏批發","香港中國同行批發","橙日(日本奇異果)","ココ購","日和優選","東京買買","自行購買","尚未安排"];
     const statusOpts = ["📝 已登記","🛒 已採買","❌ 尚未買","⚠️ 缺貨","📦 已到貨","✅ 出貨完成"];
+
+    function debounce(func, delay = 300) {
+        let timer;
+        return (...args) => {
+            clearTimeout(timer);
+            timer = setTimeout(() => func.apply(this, args), delay);
+        };
+    }
+
+    const debouncedCombinedFilter = debounce(combinedFilter);
+    const debouncedFilterPick = debounce(filterPick);
 
     function initSelectors() {
         const pStr = partners.map(p => `<option value="${p}">${p}</option>`).join('');
@@ -219,50 +233,63 @@
     }
     initSelectors();
 
+    // 修改：輸入 社群 ID 時自動尋找並帶入 LINE ID
+    function autoFillLineID() {
+        const commIdInput = document.getElementById('inCommName').value.trim();
+        const lineIdInput = document.getElementById('inLineName');
+        
+        if (!commIdInput) return;
+
+        // 從現有資料中搜尋匹配的社群 ID（取最新的一筆）
+        const match = rawStockData.slice().reverse().find(item => 
+            item.communityName && String(item.communityName).trim() === commIdInput
+        );
+
+        if (match && match.lineName) {
+            lineIdInput.value = match.lineName;
+        }
+    }
+
     function showPage(p, el) {
         document.querySelectorAll('.page').forEach(x => x.classList.remove('active-page'));
         document.getElementById(p).classList.add('active-page');
         document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
         el.classList.add('active');
+        if (p === 'add' || p === 'list') { getLatestData(); }
     }
 
-    async function prepareInventoryList() {
-    const btn = document.getElementById('syncListBtn');
-    if(btn) { btn.disabled = true; btn.innerText = "🔄 正在同步雲端庫存..."; }
-    
-    try {
-        const res = await fetch(GOOGLE_SCRIPT_URL);
-        rawStockData = await res.json();
-
-        // --- 聯想輸入邏輯開始 ---
-        if (rawStockData && rawStockData.length > 0) {
-            // 提取不重複的名稱
+    async function getLatestData(force = false) {
+        const now = Date.now();
+        if (!force && rawStockData.length > 0 && (now - lastFetchTime < CACHE_DURATION)) {
+            return rawStockData;
+        }
+        try {
+            const res = await fetch(GOOGLE_SCRIPT_URL);
+            rawStockData = await res.json();
+            lastFetchTime = Date.now();
+            
             const comms = [...new Set(rawStockData.map(i => i.communityName).filter(n => n))];
             const lines = [...new Set(rawStockData.map(i => i.lineName).filter(n => n))];
-            
-            // 注入到 datalist 中
             const cList = document.getElementById('commList');
             const lList = document.getElementById('lineList');
             if(cList) cList.innerHTML = comms.map(c => `<option value="${c}">`).join('');
             if(lList) lList.innerHTML = lines.map(l => `<option value="${l}">`).join('');
-        }
-        // --- 聯想輸入邏輯結束 ---
-
-        combinedFilter();
-        
-        if(btn) {
-            btn.innerText = "✅ 同步完成！";
-            setTimeout(() => { 
-                btn.disabled = false; 
-                btn.innerText = "🔄 點此同步最新雲端庫存"; 
-            }, 1000);
-        }
-    } catch (e) { 
-        console.error(e);
-        alert("同步失敗"); 
-        if(btn) btn.disabled = false; 
+        } catch(e) { console.error("資料讀取失敗"); }
+        return rawStockData;
     }
-}
+
+    async function prepareInventoryList() {
+        const btn = document.getElementById('syncListBtn');
+        if(btn) { btn.disabled = true; btn.innerText = "🔄 正在讀取資料..."; }
+        try {
+            await getLatestData(true);
+            combinedFilter();
+            if(btn) {
+                btn.innerText = "✅ 同步完成！";
+                setTimeout(() => { btn.disabled = false; btn.innerText = "🔄 點此同步最新雲端庫存"; }, 1000);
+            }
+        } catch (e) { alert("同步失敗"); if(btn) btn.disabled = false; }
+    }
 
     function combinedFilter() {
         const idK = document.getElementById('filterID').value.toLowerCase().trim();
@@ -280,69 +307,53 @@
     }
 
     function renderList(items) {
-    let totalCash = 0;    // 總預期收支
-    let arrivedCash = 0;  // 目前現貨價值 (已到貨)
-    let totalQty = 0;
+        let totalCash = 0, arrivedCash = 0, totalQty = 0;
+        const htmlBuffer = [];
+        items.forEach(item => {
+            const itemQty = Number(item.qty || 0);
+            const itemPrice = Number(item.price || 0);
+            const itemValue = itemPrice * itemQty;
+            totalCash += itemValue; totalQty += itemQty;
+            if (item.status === "📦 已到貨") arrivedCash += itemValue;
 
-    document.getElementById('inventoryContainer').innerHTML = items.map(item => {
-        const itemQty = Number(item.qty || 0);
-        const itemPrice = Number(item.price || 0);
-        const itemValue = itemPrice * itemQty;
+            const rawNote = item.note || '';
+            const safeNoteForJS = rawNote.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+            const displayNote = rawNote ? rawNote.replace(/\n/g, '<br>') : '+ 補備註';
 
-        // 累加總計
-        totalCash += itemValue;
-        totalQty += itemQty;
-
-        // 僅針對「📦 已到貨」的項目累加現貨價值
-        if (item.status === "📦 已到貨") {
-            arrivedCash += itemValue;
-        }
-
-        const rawNote = item.note || '';
-        const safeNoteForJS = rawNote.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
-        const displayNote = rawNote ? rawNote.replace(/\n/g, '<br>') : '+ 補備註';
-
-        return `
-        <div class="inventory-item" style="${item.status === '📦 已到貨' ? 'border-left-color: #27ae60;' : ''}">
-            <img src="${item.image || 'https://via.placeholder.com/100'}" loading="lazy" onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
-            <div class="item-info">
-                <span class="comm-text" style="color: #2c3e50; font-size: 14px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${item.communityName || '無'}</span>
-                <span class="id-text" style="color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px;">👤 LINE: ${item.lineName}</span>
-                <div class="${item.note ? 'note-text' : 'note-empty'}" onclick="openNoteModal(${item.row}, \`${safeNoteForJS}\`)">
-                    ${item.note ? '📝 ' + displayNote : '+ 補備註'}
+            htmlBuffer.push(`
+            <div class="inventory-item" style="${item.status === '📦 已到貨' ? 'border-left-color: #27ae60;' : ''}">
+                <img src="${item.image || 'https://via.placeholder.com/100'}" loading="lazy" onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
+                <div class="item-info">
+                    <span class="comm-text" style="color: #2c3e50; font-size: 14px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${item.communityName || '無'}</span>
+                    <span class="id-text" style="color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px;">👤 LINE: ${item.lineName}</span>
+                    <div class="${item.note ? 'note-text' : 'note-empty'}" onclick="openNoteModal(${item.row}, \`${safeNoteForJS}\`)">
+                        ${item.note ? '📝 ' + displayNote : '+ 補備註'}
+                    </div>
+                    <div style="font-weight: bold; font-size: 16px; color: #27ae60; margin-top: auto;">
+                        💰 $${itemPrice} <span style="font-size:12px; color:#999;">(總 $${itemValue})</span> | 📦 ${itemQty}件
+                    </div>
                 </div>
-                <div style="font-weight: bold; font-size: 16px; color: #27ae60; margin-top: auto;">
-                    💰 $${itemPrice} <span style="font-size:12px; color:#999;">(總 $${itemValue})</span> | 📦 ${itemQty}件
+                <div class="top-right-actions">
+                    <select class="select-mini" onchange="updateRow(${item.row}, 'partner', this.value)">
+                        ${partners.map(p => `<option value="${p}" ${item.partner === p ? 'selected' : ''}>${p}</option>`).join('')}
+                    </select>
+                    <select class="select-mini" style="${item.status === '📦 已到貨' ? 'border-color: #27ae60; color: #27ae60 !important;' : ''}" onchange="updateRow(${item.row}, 'status', this.value)">
+                        ${statusOpts.map(s => `<option value="${s}" ${item.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                    </select>
+                    <button class="btn-del-red" onclick="deleteRow(${item.row})">🗑️ 刪除</button>
                 </div>
-            </div>
-            <div class="top-right-actions">
-                <select class="select-mini" onchange="updateRow(${item.row}, 'partner', this.value)">
-                    ${partners.map(p => `<option value="${p}" ${item.partner === p ? 'selected' : ''}>${p}</option>`).join('')}
-                </select>
-                <select class="select-mini" style="${item.status === '📦 已到貨' ? 'border-color: #27ae60; color: #27ae60 !important;' : ''}" onchange="updateRow(${item.row}, 'status', this.value)">
-                    ${statusOpts.map(s => `<option value="${s}" ${item.status === s ? 'selected' : ''}>${s}</option>`).join('')}
-                </select>
-                <button class="btn-del-red" onclick="deleteRow(${item.row})">🗑️ 刪除</button>
-            </div>
-        </div>`;
-    }).join('');
-
-    // 更新統計欄位，顯示現貨與總額的區別
-    document.getElementById('statCash').innerHTML = `
-        <div style="text-align:center;">
-            <div style="font-size: 11px; opacity: 0.8;">總計 / 現貨</div>
-            <div>💰 $${totalCash} / <span style="color:#afffaf;">$${arrivedCash}</span></div>
-        </div>
-    `;
-    document.getElementById('statQty').innerText = `📦 ${totalQty} 件`;
-}
+            </div>`);
+        });
+        document.getElementById('inventoryContainer').innerHTML = htmlBuffer.join('');
+        document.getElementById('statCash').innerHTML = `<div style="text-align:center;"><div style="font-size: 11px; opacity: 0.8;">總計 / 現貨</div><div>💰 $${totalCash} / <span style="color:#afffaf;">$${arrivedCash}</span></div></div>`;
+        document.getElementById('statQty').innerText = `📦 ${totalQty} 件`;
+    }
 
     async function preparePickList() {
         const btn = document.getElementById('pickSyncBtn');
-        btn.disabled = true; btn.innerText = "🔄 正在同步雲端庫存...";
+        btn.disabled = true; btn.innerText = "🔄 正在同步雲端...";
         try {
-            const res = await fetch(GOOGLE_SCRIPT_URL);
-            rawStockData = await res.json();
+            await getLatestData(true);
             document.getElementById('pickFilterStatus').value = "📦 已到貨";
             filterPick();
             btn.innerText = "✅ 同步完成！";
@@ -366,7 +377,7 @@
             return (searchTerms.length === 0 || matchSearch) && matchStatus && matchPartner;
         });
 
-        document.getElementById('pickListContainer').innerHTML = items.map(item => {
+        const htmlBuffer = items.map(item => {
             const isPicked = tempPickList.some(p => p.row === item.row);
             const isOutOfStock = (item.qty <= 0);
             const isDisable = isOutOfStock || isPicked;
@@ -395,12 +406,9 @@
                         </div>
                     </div>
                 </div>
-                <div class="top-right-actions">
-                    <div class="select-mini">${item.partner || '未安排'}</div>
-                    <div class="select-mini">${item.status}</div>
-                </div>
             </div>`;
-        }).join('');
+        });
+        document.getElementById('pickListContainer').innerHTML = htmlBuffer.join('');
     }
 
     function addPick(row) {
@@ -408,8 +416,7 @@
         const qty = Number(document.getElementById(`pQty_${row}`).value);
         if (qty <= 0 || qty > item.qty) return alert("數量錯誤");
         tempPickList.push({ ...item, pickQty: qty });
-        renderSummary();
-        filterPick();
+        renderSummary(); filterPick();
     }
 
     function renderSummary() {
@@ -417,41 +424,17 @@
         const statCount = document.getElementById('pickStatCount');
         const totalDisplay = document.getElementById('pickTotalDisplay');
         const totalAmount = document.getElementById('pickTotalAmount');
-
-        if(!tempPickList.length) { 
-            box.innerHTML = "尚未選取商品"; 
-            statCount.innerText = "0 件";
-            totalDisplay.style.display = 'none';
-            return; 
-        }
-
-        let totalQty = 0;
-        let totalPrice = 0;
-
+        if(!tempPickList.length) { box.innerHTML = "尚未選取商品"; statCount.innerText = "0 件"; totalDisplay.style.display = 'none'; return; }
+        let totalQty = 0, totalPrice = 0;
         box.innerHTML = tempPickList.map((i, idx) => {
-            totalQty += i.pickQty;
-            totalPrice += (i.price * i.pickQty);
+            totalQty += i.pickQty; totalPrice += (i.price * i.pickQty);
             const displayName = i.communityName ? i.communityName : i.lineName;
-            return `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding:10px; background:white; border-radius:10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-                <div style="display:flex; flex-direction:column;">
-                    <span style="font-weight:bold; color:#2c3e50; font-size:14px;">💬 ${displayName}</span>
-                    <span style="font-size:12px; color:#7f8c8d;">數量: ${i.pickQty} | 小計: $${i.price * i.pickQty}</span>
-                </div>
-                <button onclick="removeItem(${idx}, ${i.row})" style="width:auto; background:#ff4d4d; color:white; padding:5px 10px; border-radius:6px; font-size:12px;">移除</button>
-            </div>`;
+            return `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding:10px; background:white; border-radius:10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);"><div style="display:flex; flex-direction:column;"><span style="font-weight:bold; color:#2c3e50; font-size:14px;">💬 ${displayName}</span><span style="font-size:12px; color:#7f8c8d;">數量: ${i.pickQty} | 小計: $${i.price * i.pickQty}</span></div><button onclick="removeItem(${idx}, ${i.row})" style="width:auto; background:#ff4d4d; color:white; padding:5px 10px; border-radius:6px; font-size:12px;">移除</button></div>`;
         }).join('');
-
-        statCount.innerText = `${totalQty} 件`;
-        totalAmount.innerText = `$${totalPrice}`;
-        totalDisplay.style.display = 'block';
+        statCount.innerText = `${totalQty} 件`; totalAmount.innerText = `$${totalPrice}`; totalDisplay.style.display = 'block';
     }
 
-    function removeItem(idx, row) {
-        tempPickList.splice(idx, 1);
-        renderSummary();
-        filterPick();
-    }
+    function removeItem(idx, row) { tempPickList.splice(idx, 1); renderSummary(); filterPick(); }
 
     function confirmPickAndShowSheet() {
         const name = document.getElementById('pickCollectorName').value;
@@ -459,36 +442,19 @@
         document.getElementById('resName').innerText = name;
         const now = new Date();
         document.getElementById('resTime').innerText = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()}`;
-        let total = 0;
-        let tableHtml = "";
+        let total = 0, tableHtml = "";
         tempPickList.forEach(i => {
             total += i.price * i.pickQty;
             const displayName = i.communityName ? i.communityName : i.lineName;
-            tableHtml += `
-                <tr style="border-bottom: 1px solid #eee;">
-                    <td style="width: 150px; padding: 10px; text-align: center;">
-                        <img src="${i.image || 'https://via.placeholder.com/150'}" style="width:150px; height:150px; object-fit:cover; border-radius:8px;">
-                    </td>
-                    <td style="text-align:left; padding: 15px;">
-                        <div style="font-weight:bold; font-size: 18px;">💬 ${displayName}</div>
-                        <div style="font-size:14px; color:#555; margin-top:5px; background:#f9f9f9; padding:5px; border-radius:4px;">
-                            ${i.note ? '📝 ' + i.note : '(無備註)'}
-                        </div>
-                    </td>
-                    <td style="text-align:center; width: 60px;">${i.pickQty}</td>
-                    <td style="text-align:center; width: 90px; font-weight:bold; color: #e74c3c;">$${i.price * i.pickQty}</td>
-                </tr>`;
+            tableHtml += `<tr style="border-bottom: 1px solid #eee;"><td style="width: 150px; padding: 10px; text-align: center;"><img src="${i.image || 'https://via.placeholder.com/150'}" style="width:150px; height:150px; object-fit:cover; border-radius:8px;"></td><td style="text-align:left; padding: 15px;"><div style="font-weight:bold; font-size: 18px;">💬 ${displayName}</div><div style="font-size:14px; color:#555; margin-top:5px; background:#f9f9f9; padding:5px; border-radius:4px;">${i.note ? '📝 ' + i.note : '(無備註)'}</div></td><td style="text-align:center; width: 60px;">${i.pickQty}</td><td style="text-align:center; width: 90px; font-weight:bold; color: #e74c3c;">$${i.price * i.pickQty}</td></tr>`;
         });
-        document.getElementById('resTableBody').innerHTML = tableHtml;
-        document.getElementById('resTotal').innerText = `$${total}`;
-        document.getElementById('printOverlay').style.display = 'block';
-        document.getElementById('printOverlay').scrollTo(0, 0);
+        document.getElementById('resTableBody').innerHTML = tableHtml; document.getElementById('resTotal').innerText = `$${total}`;
+        document.getElementById('printOverlay').style.display = 'block'; document.getElementById('printOverlay').scrollTo(0, 0);
     }
 
     async function finalCommitToGoogle() {
         if(!confirm("確定要扣庫存結案嗎？")) return;
-        const btn = document.getElementById('finalConfirmBtn');
-        btn.disabled = true; btn.innerText = "🚀 同步中...";
+        const btn = document.getElementById('finalConfirmBtn'); btn.disabled = true; btn.innerText = "🚀 同步中...";
         try {
             for(let item of tempPickList) {
                 const newQty = item.qty - item.pickQty;
@@ -498,25 +464,18 @@
         } catch (e) { alert("失敗"); btn.disabled = false; }
     }
 
-    function openNoteModal(row, note) { 
-        document.getElementById('editNoteRow').value = row; 
-        document.getElementById('editNoteInput').value = note; 
-        document.getElementById('noteModal').style.display = 'flex'; 
-    }
+    function openNoteModal(row, note) { document.getElementById('editNoteRow').value = row; document.getElementById('editNoteInput').value = note; document.getElementById('noteModal').style.display = 'flex'; }
     async function saveNote() {
-        const row = document.getElementById('editNoteRow').value; 
-        const note = document.getElementById('editNoteInput').value;
+        const row = document.getElementById('editNoteRow').value, note = document.getElementById('editNoteInput').value;
         await fetch(GOOGLE_SCRIPT_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ method: "UPDATE", row: parseInt(row), note: note }) });
-        document.getElementById('noteModal').style.display = 'none'; 
-        prepareInventoryList();
+        document.getElementById('noteModal').style.display = 'none'; prepareInventoryList();
     }
 
     async function updateRow(row, key, val) { await fetch(GOOGLE_SCRIPT_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ method: "UPDATE", row, [key]: val }) }); }
     async function deleteRow(row) { if(confirm("確定刪除？")) { await fetch(GOOGLE_SCRIPT_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ method: "DELETE", row: row }) }); prepareInventoryList(); } }
 
     document.getElementById('cameraInput').addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        const reader = new FileReader();
+        const file = e.target.files[0], reader = new FileReader();
         reader.onload = function(e) {
             const img = new Image();
             img.onload = function() {
@@ -533,28 +492,25 @@
     async function addToInventory() {
         const comm = document.getElementById('inCommName').value; 
         if(!comm) return alert("❌ 請填寫【社群 ID】，此為必填欄位！");
-        const line = document.getElementById('inLineName').value; 
-        const btn = document.getElementById('inBtn'); 
-        btn.disabled = true; 
-        btn.innerText = "同步中...";
+        const btn = document.getElementById('inBtn'); btn.disabled = true; btn.innerText = "同步中...";
         await fetch(GOOGLE_SCRIPT_URL, { 
-            method: "POST", 
-            mode: "no-cors", 
+            method: "POST", mode: "no-cors", 
             body: JSON.stringify({ 
-                method: "ADD", 
-                lineName: line, 
-                communityName: document.getElementById('inCommName').value, 
-                qty: Number(document.getElementById('inQty').value), 
-                price: document.getElementById('inPrice').value, 
-                partner: document.getElementById('inPartner').value, 
-                note: document.getElementById('inNote').value, 
-                status: "📝 已登記",
-                image: compressedImageData 
+                method: "ADD", lineName: document.getElementById('inLineName').value, communityName: comm, 
+                qty: Number(document.getElementById('inQty').value), price: document.getElementById('inPrice').value, 
+                partner: document.getElementById('inPartner').value, note: document.getElementById('inNote').value, 
+                status: "📝 已登記", image: compressedImageData 
             }) 
         });
-        alert("✅ 入庫成功"); 
-        location.reload();
+        alert("✅ 入庫成功"); location.reload();
     }
+
+    // 事件綁定
+    document.getElementById('filterID').oninput = debouncedCombinedFilter;
+    document.getElementById('pickSearchID').oninput = debouncedFilterPick;
+    // 綁定：當社群 ID 失去焦點或輸入完成時，嘗試自動帶入 LINE ID
+    document.getElementById('inCommName').onblur = autoFillLineID; 
+
 </script>
 </body>
 </html>
