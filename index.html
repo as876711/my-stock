@@ -5,58 +5,84 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>智慧庫存 V18.5 - 介面優化版</title>
     <style>
-    body { font-family: -apple-system, "Helvetica Neue", sans-serif; margin: 0; padding: 0; background: #f0f2f5; padding-bottom: 100px; color: #333; }
-    .page { display: none; padding: 15px; max-width: 600px; margin: auto; }
-    .active-page { display: block; }
-    .nav-bar { position: fixed; bottom: 0; width: 100%; height: 75px; background: white; display: flex; box-shadow: 0 -3px 15px rgba(0,0,0,0.1); z-index: 1000; }
-    .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 14px; color: #888; cursor: pointer; transition: 0.3s; }
-    .nav-item.active { color: #007bff; font-weight: bold; }
-    .card { background: white; padding: 15px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 15px; }
-    input, select, button, textarea { width: 100%; padding: 12px; margin: 5px 0; border-radius: 10px; border: 1px solid #ddd; box-sizing: border-box; font-size: 16px; outline: none; transition: 0.3s; }
-    button { cursor: pointer; border: none; font-weight: bold; }
-    button:active { transform: scale(0.98); }
-    .stats-bar { background: #007bff; color: white; padding: 10px 15px; border-radius: 12px; margin-bottom: 15px; font-weight: bold; display: flex; justify-content: space-around; align-items: center; font-size: 16px; line-height: 1.2; }
-
-    /* --- 庫存卡片佈局 --- */
-    .inventory-item { 
-        background: white; margin-bottom: 15px; padding: 15px; border-radius: 20px; 
-        display: flex; flex-direction: column; /* 垂直佈局 */
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08); 
-        border-left: 8px solid #007bff; 
-        transition: all 0.3s ease;
-    }
-    .inventory-item img { width: 100px; height: 100px; border-radius: 12px; object-fit: cover; margin-right: 15px; border: 1px solid #f0f0f0; flex-shrink: 0; }
-    .item-info { flex: 1; display: flex; flex-direction: column; min-height: 100px; }
-    .id-text { color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px; }
-    .note-text { font-size: 12px; color: #000000; background: #f4f6f7; padding: 6px 10px; border-radius: 8px; display: inline-block; cursor: pointer; margin-bottom: 8px; line-height: 1.4; }
-    .note-empty { font-size: 12px; color: #007bff; cursor: pointer; margin-bottom: 8px; }
-
-    /* 下方選單樣式 */
-    .select-mini { 
-        flex: 1; padding: 8px; font-size: 14px; border-radius: 8px; 
-        border: 2px solid #888888; color: #000000 !important; 
-        background: #ffffff; font-weight: bold; cursor: pointer;
-        outline: none; appearance: auto; 
-    }
-
-    /* 【新改動】右上角微型按鈕樣式 */
-    .btn-mini-action {
-    width: 70px; /* 更新寬度 */
-    height: 32px; /* 更新高度 */
-    opacity: 1;   /* 確保不反灰 */
-    border-radius: 6px;
-    font-size: 13px;
-    color: white;
+        body { font-family: -apple-system, "Helvetica Neue", sans-serif; margin: 0; padding: 0; background: #f0f2f5; padding-bottom: 100px; color: #333; }
+        .page { display: none; padding: 15px; max-width: 600px; margin: auto; }
+        .active-page { display: block; }
+        .nav-bar { position: fixed; bottom: 0; width: 100%; height: 75px; background: white; display: flex; box-shadow: 0 -3px 15px rgba(0,0,0,0.1); z-index: 1000; }
+        .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 14px; color: #888; cursor: pointer; transition: 0.3s; }
+        .nav-item.active { color: #007bff; font-weight: bold; }
+        .card { background: white; padding: 15px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        input, select, button, textarea { width: 100%; padding: 12px; margin: 5px 0; border-radius: 10px; border: 1px solid #ddd; box-sizing: border-box; font-size: 16px; outline: none; transition: 0.3s; }
+        button { cursor: pointer; border: none; font-weight: bold; }
+        button:active { transform: scale(0.98); }
+        .stats-bar { 
+    background: #007bff; 
+    color: white; 
+    padding: 10px 15px; /* 稍微縮減上下間距 */
+    border-radius: 12px; 
+    margin-bottom: 15px; 
+    font-weight: bold; 
+    display: flex; 
+    justify-content: space-around; 
+    align-items: center; /* 垂直居中 */
+    font-size: 16px; 
+    line-height: 1.2; /* 讓兩行文字間距緊湊一點 */
 }
-    .btn-mini-action:hover, .btn-mini-action:active { opacity: 1; /* 點擊時變全亮 */ }
 
-    /* 其他 */
-    #printOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 5000; overflow-y: auto; padding: 20px; }
-    .print-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    .print-table th, .print-table td { border: 1px solid #eee; padding: 12px; text-align: center; }
-    #noteModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; justify-content: center; align-items: center; }
-    @media print { .nav-bar, .no-print { display: none !important; } #printOverlay { display: block !important; } }
-</style>
+        /* 庫存卡片樣式 */
+        .inventory-item { 
+            background: white; margin-bottom: 15px; padding: 15px; border-radius: 20px; 
+            display: flex; align-items: flex-start; box-shadow: 0 4px 12px rgba(0,0,0,0.08); 
+            border-left: 8px solid #007bff; position: relative; min-height: 110px;
+            transition: all 0.3s ease;
+        }
+        .inventory-item img { width: 100px; height: 100px; border-radius: 12px; object-fit: cover; margin-right: 15px; border: 1px solid #f0f0f0; flex-shrink: 0; }
+        .item-info { flex: 1; display: flex; flex-direction: column; min-height: 100px; justify-content: space-between; }
+        .id-text { color: #2c3e50; font-size: 14px; font-weight: bold; display: block; margin-bottom: 2px; }
+        .note-text { font-size: 12px; color: #000000; background: #f4f6f7; padding: 4px 10px; border-radius: 6px; display: inline-block; cursor: pointer; margin-bottom: 8px; line-height: 1.4; }
+        
+        .top-right-actions { 
+    position: absolute; 
+    top: 15px; 
+    right: 15px; 
+    display: flex; 
+    flex-direction: column; 
+    gap: 0.5px; /* 從 5px 改為 2px，縮小選單間距 */
+    align-items: flex-end; 
+}
+        .select-mini { 
+            width: auto; 
+            min-width: 110px; 
+            padding: 4px; 
+            font-size: 15px;
+            border-radius: 6px; 
+            border: 2px solid #888888; 
+            color: #000000 !important; 
+            background: #ffffff; 
+            font-weight: bold; 
+            cursor: pointer;
+            outline: none;
+            appearance: auto; 
+        }
+        .btn-del-red { background: #ff4d4d; color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; }
+
+        #printOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 5000; overflow-y: auto; padding: 20px; }
+        .print-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .print-table th, .print-table td { border: 1px solid #eee; padding: 12px; text-align: center; }
+        .print-table th { background: #f8f9fa; }
+        #noteModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; justify-content: center; align-items: center; }
+        
+        @media print {
+            .nav-bar, .no-print, .nav-item, #addPage, #listPage, #pickPage { display: none !important; }
+            #printOverlay { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: auto !important; display: block !important; overflow: visible !important; }
+            table { page-break-inside: auto; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+            thead { display: table-header-group; }
+            tfoot { display: table-footer-group; }
+            @page { margin: 1cm; }
+            body { -webkit-print-color-adjust: exact; }
+        }
+    </style>
 </head>
 <body>
 
@@ -440,7 +466,7 @@
             <div style="display: flex; align-items: flex-start; width: 100%;">
                 <img src="${item.image || 'https://via.placeholder.com/100'}" loading="lazy" onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
                 <div class="item-info" style="flex: 1; padding-right: 80px;">
-                    <span class="comm-text" style="color: #2c3e50; font-size: 20px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${item.communityName || '無'}</span>
+                    <span class="comm-text" style="color: #2c3e50; font-size: 14px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${item.communityName || '無'}</span>
                     <span class="id-text" style="color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px;">👤 LINE: ${item.lineName || '無'}</span>
                     <div class="${item.note ? 'note-text' : 'note-empty'}" onclick="openNoteModal(${item.row}, \`${safeNoteForJS}\`)" style="margin-bottom: 5px;">
                         ${item.note ? '📝 ' + displayNote : '+ 補備註'}
@@ -464,6 +490,14 @@
     
     document.getElementById('pickListContainer').innerHTML = htmlBuffer;
 }
+
+    function addPick(row) {
+        const item = rawStockData.find(i => i.row === row);
+        const qty = Number(document.getElementById(`pQty_${row}`).value);
+        if (qty <= 0 || qty > item.qty) return alert("數量錯誤");
+        tempPickList.push({ ...item, pickQty: qty });
+        renderSummary(); filterPick();
+    }
 
     function renderSummary() {
         const box = document.getElementById('pickSummary');
