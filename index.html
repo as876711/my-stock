@@ -233,21 +233,14 @@
     }
     initSelectors();
 
-    // 修改：輸入 社群 ID 時自動尋找並帶入 LINE ID
     function autoFillLineID() {
         const commIdInput = document.getElementById('inCommName').value.trim();
         const lineIdInput = document.getElementById('inLineName');
-        
         if (!commIdInput) return;
-
-        // 從現有資料中搜尋匹配的社群 ID（取最新的一筆）
         const match = rawStockData.slice().reverse().find(item => 
             item.communityName && String(item.communityName).trim() === commIdInput
         );
-
-        if (match && match.lineName) {
-            lineIdInput.value = match.lineName;
-        }
+        if (match && match.lineName) { lineIdInput.value = match.lineName; }
     }
 
     function showPage(p, el) {
@@ -322,7 +315,7 @@
 
             htmlBuffer.push(`
             <div class="inventory-item" style="${item.status === '📦 已到貨' ? 'border-left-color: #27ae60;' : ''}">
-                <img src="${item.image || 'https://via.placeholder.com/100'}" loading="lazy" onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
+                <img src="${item.image || 'https://via.placeholder.com/100'}" id="img_${item.row}" loading="lazy" onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
                 <div class="item-info">
                     <span class="comm-text" style="color: #2c3e50; font-size: 14px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${item.communityName || '無'}</span>
                     <span class="id-text" style="color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px;">👤 LINE: ${item.lineName}</span>
@@ -340,13 +333,52 @@
                     <select class="select-mini" style="${item.status === '📦 已到貨' ? 'border-color: #27ae60; color: #27ae60 !important;' : ''}" onchange="updateRow(${item.row}, 'status', this.value)">
                         ${statusOpts.map(s => `<option value="${s}" ${item.status === s ? 'selected' : ''}>${s}</option>`).join('')}
                     </select>
-                    <button class="btn-del-red" onclick="deleteRow(${item.row})">🗑️ 刪除</button>
+                    <div style="display: flex; gap: 4px; margin-top: 4px;">
+                        <button class="btn-del-red" style="background: #3498db; flex: 1;" onclick="triggerEditPhoto(${item.row})">📷 換圖</button>
+                        <button class="btn-del-red" style="flex: 1;" onclick="deleteRow(${item.row})">🗑️ 刪除</button>
+                    </div>
                 </div>
             </div>`);
         });
         document.getElementById('inventoryContainer').innerHTML = htmlBuffer.join('');
         document.getElementById('statCash').innerHTML = `<div style="text-align:center;"><div style="font-size: 11px; opacity: 0.8;">總計 / 現貨</div><div>💰 $${totalCash} / <span style="color:#afffaf;">$${arrivedCash}</span></div></div>`;
         document.getElementById('statQty').innerText = `📦 ${totalQty} 件`;
+    }
+
+    function triggerEditPhoto(row) {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*';
+        fileInput.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const imgElement = document.getElementById(`img_${row}`);
+            const originalSrc = imgElement.src;
+            imgElement.src = "https://via.placeholder.com/100?text=上傳中...";
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = async function() {
+                    const cvs = document.createElement('canvas');
+                    const scale = 800 / img.width;
+                    cvs.width = 800;
+                    cvs.height = img.height * scale;
+                    cvs.getContext('2d').drawImage(img, 0, 0, 800, cvs.height);
+                    const base64Data = cvs.toDataURL('image/jpeg', 0.7);
+                    try {
+                        await updateRow(row, 'image', base64Data);
+                        imgElement.src = base64Data;
+                        alert("照片更新成功！");
+                    } catch (err) {
+                        alert("更新失敗");
+                        imgElement.src = originalSrc;
+                    }
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        };
+        fileInput.click();
     }
 
     async function preparePickList() {
@@ -405,6 +437,10 @@
                             </button>
                         </div>
                     </div>
+                </div>
+                <div class="top-right-actions">
+                    <div class="select-mini">${item.partner || '未安排'}</div>
+                    <div class="select-mini" style="${item.status === '📦 已到貨' ? 'border-color: #27ae60; color: #27ae60;' : ''}">${item.status}</div>
                 </div>
             </div>`;
         });
@@ -505,12 +541,9 @@
         alert("✅ 入庫成功"); location.reload();
     }
 
-    // 事件綁定
     document.getElementById('filterID').oninput = debouncedCombinedFilter;
     document.getElementById('pickSearchID').oninput = debouncedFilterPick;
-    // 綁定：當社群 ID 失去焦點或輸入完成時，嘗試自動帶入 LINE ID
     document.getElementById('inCommName').onblur = autoFillLineID; 
-
 </script>
 </body>
 </html>
