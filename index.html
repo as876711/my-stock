@@ -149,6 +149,9 @@
         <h2 style="margin:0 0 10px 0;">🛒 檢貨系統</h2>
         <input type="text" id="pickCollectorName" placeholder="👤 領取人名稱 (必填)">
         <input type="text" id="pickSearchID" placeholder="🔍 搜尋 ID 或備註內容" oninput="filterPick()">
+        <button id="selectAllBtn" onclick="addAllFilteredToPick()" style="background:#2ecc71; color:white; font-size:14px; height:40px; margin-top: 10px; border-radius: 12px; width: 100%; font-weight: bold;">
+    ✅️全選目前篩選結果
+        </button>
         <div style="display:flex; gap:5px; margin-top: 5px;">
             <select id="pickFilterPartner" onchange="filterPick()" style="flex:1; border-color: #2ecc71; height: 45px;"></select>
             <select id="pickFilterStatus" onchange="filterPick()" style="flex:1; border-color: #2ecc71; height: 45px;"></select>
@@ -681,20 +684,89 @@
 });
 
     async function addToInventory() {
-        const comm = document.getElementById('inCommName').value; 
-        if(!comm) return alert("❌ 請填寫【社群 ID】，此為必填欄位！");
-        const btn = document.getElementById('inBtn'); btn.disabled = true; btn.innerText = "同步中...";
+    const comm = document.getElementById('inCommName').value; 
+    if(!comm) return alert("❌ 請填寫【社群 ID】，此為必填欄位！");
+
+    const btn = document.getElementById('inBtn'); 
+    btn.disabled = true; 
+    btn.innerText = "同步中...";
+
+    try {
+        // 1. 確保圖片資料是最新且經過 Canvas 處理的 (由前面的 cameraInput 監聽器產生)
+        // 這裡我們直接使用已經在 cameraInput 裡壓縮好的 compressedImageData
+        
+        const payload = {
+            method: "ADD",
+            lineName: document.getElementById('inLineName').value || "",
+            communityName: comm,
+            qty: Number(document.getElementById('inQty').value) || 0,
+            price: document.getElementById('inPrice').value || 0,
+            partner: document.getElementById('inPartner').value || "",
+            note: document.getElementById('inNote').value || "",
+            status: "📝 已登記",
+            // 💡 關鍵：只傳送純編碼，不夾帶任何原始檔案的 metadata
+            image: typeof compressedImageData !== 'undefined' ? compressedImageData : ""
+        };
+
+        // 2. 使用最穩定的傳輸設定
         await fetch(GOOGLE_SCRIPT_URL, { 
-            method: "POST", mode: "no-cors", 
-            body: JSON.stringify({ 
-                method: "ADD", lineName: document.getElementById('inLineName').value, communityName: comm, 
-                qty: Number(document.getElementById('inQty').value), price: document.getElementById('inPrice').value, 
-                partner: document.getElementById('inPartner').value, note: document.getElementById('inNote').value, 
-                status: "📝 已登記", image: compressedImageData 
-            }) 
+            method: "POST", 
+            mode: "no-cors", 
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify(payload) 
         });
-        alert("✅ 入庫成功"); location.reload();
+
+        alert("✅ 入庫成功！(長檔名防禦已啟動)");
+        location.reload(); // 成功後刷新頁面
+    } catch (err) {
+        console.error("入庫出錯:", err);
+        alert("❌ 入庫失敗，請檢查網路或嘗試重新拍照");
+        btn.disabled = false;
+        btn.innerText = "重新同步";
     }
+}
+
+    function addAllFilteredToPick() {
+    // 1. 取得目前的篩選條件 (與 filterPick 邏輯同步)
+    const idKey = document.getElementById('pickSearchID').value.trim(); // 保持原始大小寫，填入名稱較美觀
+    const statusKey = document.getElementById('pickFilterStatus').value;
+    const partnerKey = document.getElementById('pickFilterPartner').value;
+    const searchTerms = idKey ? idKey.toLowerCase().split(/\s+/) : [];
+    
+    // 2. 找出符合目前畫面上顯示的所有項目
+    const filteredItems = rawStockData.filter(i => {
+        const matchSearch = searchTerms.every(term => 
+            (i.lineName && String(i.lineName).toLowerCase().includes(term)) || 
+            (i.communityName && String(i.communityName).toLowerCase().includes(term)) ||
+            (i.note && String(i.note).toLowerCase().includes(term))
+        );
+        const matchStatus = (statusKey === "" || i.status === statusKey);
+        const matchPartner = (partnerKey === "" || i.partner === partnerKey);
+        return (searchTerms.length === 0 || matchSearch) && matchStatus && matchPartner;
+    });
+
+    // 3. 執行批次加入
+    let addedCount = 0;
+    filteredItems.forEach(item => {
+        const isAlreadyIn = tempPickList.some(p => p.row === item.row);
+        if (!isAlreadyIn && item.qty > 0) {
+            tempPickList.push({ ...item, pickQty: item.qty });
+            addedCount++;
+        }
+    });
+
+    if (addedCount > 0) {
+        // --- 關鍵位置：自動同步名稱 ---
+        if (idKey) {
+            document.getElementById('pickCollectorName').value = idKey;
+        }
+        
+        renderSummary(); // 更新下方清單與總金額
+        filterPick();    // 刷新上方列表顯示「已選」
+    } else {
+        alert("沒有可加入的商品（可能已在清單中或庫存為 0）");
+    }
+}
 
     document.getElementById('filterID').oninput = debouncedCombinedFilter;
     document.getElementById('pickSearchID').oninput = debouncedFilterPick;
