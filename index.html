@@ -232,7 +232,7 @@
     <div class="nav-item" onclick="showPage('pickPage', this); preparePickList();"><span>🛒</span><span>檢貨</span></div>
 </div>
 <script>
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2QOh32Z5z3HTJxwseJVrrSY9qpeGaVO8TawVSWIQHowimwy1jvVERrhJLzN3DL8ogqA/exec"; 
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyJB8bx6ORjqtVDVkpoOWhXrObiszG1bYL7yBbsSSslCHv5JLwvfv9YoyOoOD8IeL6M1A/exec"; 
     let rawStockData = [];
     let tempPickList = [];
     let compressedImageData = "";
@@ -421,41 +421,60 @@
         const file = e.target.files[0];
         if (!file) return;
 
-        // 取得 UI 元素，給予上傳中的視覺回饋
+        // 1. 介面回饋：讓圖片變淡，表示處理中
         const imgElement = document.getElementById(`img_${row}`);
-        const originalSrc = imgElement.src;
-        imgElement.style.opacity = "0.5"; 
-        
+        if (imgElement) {
+            imgElement.style.opacity = "0.3";
+            imgElement.style.filter = "grayscale(100%)";
+        }
+
         const reader = new FileReader();
         reader.onload = function(event) {
             const img = new Image();
             img.onload = async function() {
-                // --- 核心壓縮與去檔名邏輯 ---
+                // 2. 畫布重繪：徹底切斷與原始「長檔名檔案」的物理聯繫
                 const cvs = document.createElement('canvas');
-                const maxW = 600; // 限制寬度在 600px，確保字串不會過長
+                const maxW = 500; // 縮小尺寸確保傳輸穩定
                 const scale = Math.min(1, maxW / img.width);
                 cvs.width = img.width * scale;
                 cvs.height = img.height * scale;
-                
                 const ctx = cvs.getContext('2d');
                 ctx.drawImage(img, 0, 0, cvs.width, cvs.height);
                 
-                // 這裡產生的 base64Data 只包含圖片像素，不含任何原始檔名資訊
-                const base64Data = cvs.toDataURL('image/jpeg', 0.5); 
+                // 3. 轉成品質 0.4 的編碼 (長度適中，適合存入 Google Sheets)
+                const base64Data = cvs.toDataURL('image/jpeg', 0.4); 
 
                 try {
-                    // 傳送到後端，僅傳送 row 和編碼後的圖片字串
-                    await updateRow(row, 'image', base64Data);
-                    
-                    // 更新成功，更新前端顯示
-                    imgElement.src = base64Data;
-                    imgElement.style.opacity = "1";
-                    alert("✅ 圖片更新成功！(已自動優化檔名)");
+                    // 4. 【核心改進】手動拼接 JSON 字串
+                    // 這樣寫可以確保傳出的 body 裡面絕對沒有原始檔案的長檔名 metadata
+                    const cleanJsonPayload = JSON.stringify({
+                        "method": "UPDATE",
+                        "row": parseInt(row),
+                        "image": base64Data
+                    });
+
+                    await fetch(GOOGLE_SCRIPT_URL, {
+                        method: "POST",
+                        mode: "no-cors",
+                        headers: { "Content-Type": "text/plain;charset=utf-8" },
+                        body: cleanJsonPayload
+                    });
+
+                    // 5. 更新成功後的 UI 恢復
+                    if (imgElement) {
+                        imgElement.src = base64Data;
+                        imgElement.style.opacity = "1";
+                        imgElement.style.filter = "none";
+                    }
+                    alert("✅ 換圖成功！");
                 } catch (err) {
-                    console.error("上傳錯誤:", err);
-                    alert("❌ 上傳失敗，請檢查網路或縮小圖檔");
-                    imgElement.src = originalSrc;
-                    imgElement.style.opacity = "1";
+                    console.error("上傳失敗:", err);
+                    alert("❌ 上傳失敗，請嘗試截圖後上傳");
+                    if (imgElement) {
+                        imgElement.src = imgElement.src; // 恢復原狀
+                        imgElement.style.opacity = "1";
+                        imgElement.style.filter = "none";
+                    }
                 }
             };
             img.src = event.target.result;
