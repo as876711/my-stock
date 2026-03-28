@@ -82,6 +82,28 @@
             @page { margin: 1cm; }
             body { -webkit-print-color-adjust: exact; }
         }
+
+        #imageViewer {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 6000; /* 高於所有 UI */
+    justify-content: center;
+    align-items: center;
+    cursor: zoom-out;
+}
+
+#imageViewer img {
+    max-width: 95%;
+    max-height: 95%;
+    border-radius: 8px;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+    transition: transform 0.3s ease;
+}
     </style>
 </head>
 <body>
@@ -200,13 +222,17 @@
     </div>
 </div>
 
+<div id="imageViewer" onclick="this.style.display='none'">
+    <img id="fullImage" src="" alt="預覽圖">
+</div>
+
 <div class="nav-bar">
     <div class="nav-item active" onclick="showPage('addPage', this)"><span>📥</span><span>入庫</span></div>
     <div class="nav-item" onclick="showPage('listPage', this); prepareInventoryList();"><span>📋</span><span>紀錄</span></div>
     <div class="nav-item" onclick="showPage('pickPage', this); preparePickList();"><span>🛒</span><span>檢貨</span></div>
 </div>
 <script>
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymfSDnNMRJ_VRkkV2leUbxllWgkV5sen9HPBWqeRK4wcEUfeEPqiScJl93Ljkt8k68UA/exec"; 
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2QOh32Z5z3HTJxwseJVrrSY9qpeGaVO8TawVSWIQHowimwy1jvVERrhJLzN3DL8ogqA/exec"; 
     let rawStockData = [];
     let tempPickList = [];
     let compressedImageData = "";
@@ -307,6 +333,13 @@
         renderList(filtered);
     }
 
+    function viewImage(src) {
+    const viewer = document.getElementById('imageViewer');
+    const fullImg = document.getElementById('fullImage');
+    fullImg.src = src;
+    viewer.style.display = 'flex';
+    }
+    
     function renderList(items) {
     let totalCash = 0, arrivedCash = 0, totalQty = 0;
     const htmlBuffer = [];
@@ -329,18 +362,22 @@
             <div style="position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; z-index: 10;">
                 <button onclick="triggerEditPhoto(${item.row})" 
                         style="width: 70px; height: 32px; background: #3498db; color: white; border-radius: 6px; font-size: 11px; font-weight: bold; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; padding: 0;">
-                    <span>📷</span>
-                    <span>換圖</span>
+                    <span>📷</span><span>換圖</span>
                 </button>
                 <button onclick="deleteRow(${item.row})" 
                         style="width: 70px; height: 32px; background: #ff4d4d; color: white; border-radius: 6px; font-size: 11px; font-weight: bold; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; padding: 0;">
-                    <span>🗑️</span>
-                    <span>刪除</span>
+                    <span>🗑️</span><span>刪除</span>
                 </button>
             </div>
 
             <div style="display: flex; align-items: flex-start; width: 100%;">
-                <img src="${item.image || 'https://via.placeholder.com/100'}" id="img_${item.row}" loading="lazy" onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
+                <img src="${item.image || 'https://via.placeholder.com/100'}" 
+                     id="img_${item.row}" 
+                     loading="lazy" 
+                     style="cursor: pointer;" 
+                     onclick="viewImage(this.src)"
+                     onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
+                
                 <div class="item-info" style="flex: 1; padding-right: 80px;">
                     <span class="comm-text" style="color: #2c3e50; font-size: 20px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${item.communityName || '無'}</span>
                     <span class="id-text" style="color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px;">👤 LINE: ${item.lineName}</span>
@@ -361,13 +398,12 @@
                     ${statusOpts.map(s => `<option value="${s}" ${item.status === s ? 'selected' : ''}>${s}</option>`).join('')}
                 </select>
             </div>
-            
         </div>`);
     });
 
     document.getElementById('inventoryContainer').innerHTML = htmlBuffer.join('');
     
-    // 統計更新
+    // 統計更新部分保持不變
     document.getElementById('statCash').innerHTML = `
         <div style="text-align:center;">
             <div style="font-size: 11px; opacity: 0.8;">總計 / 現貨</div>
@@ -380,43 +416,46 @@
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = 'image/*';
+    
     fileInput.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
+        // 取得 UI 元素，給予上傳中的視覺回饋
         const imgElement = document.getElementById(`img_${row}`);
         const originalSrc = imgElement.src;
+        imgElement.style.opacity = "0.5"; 
         
-        // 1. UI 先顯示上傳中
-        imgElement.src = "https://via.placeholder.com/100?text=上傳中...";
-
         const reader = new FileReader();
         reader.onload = function(event) {
             const img = new Image();
             img.onload = async function() {
-                // 2. 壓縮圖片 (維持 800px 寬度)
+                // --- 核心壓縮與去檔名邏輯 ---
                 const cvs = document.createElement('canvas');
-                const scale = 800 / img.width;
-                cvs.width = 800;
+                const maxW = 600; // 限制寬度在 600px，確保字串不會過長
+                const scale = Math.min(1, maxW / img.width);
+                cvs.width = img.width * scale;
                 cvs.height = img.height * scale;
-                const ctx = cvs.getContext('2d');
-                ctx.drawImage(img, 0, 0, 800, cvs.height);
                 
-                // 使用 0.6 品質進一步壓縮體積
-                const base64Data = cvs.toDataURL('image/jpeg', 0.6); 
+                const ctx = cvs.getContext('2d');
+                ctx.drawImage(img, 0, 0, cvs.width, cvs.height);
+                
+                // 這裡產生的 base64Data 只包含圖片像素，不含任何原始檔名資訊
+                const base64Data = cvs.toDataURL('image/jpeg', 0.5); 
 
                 try {
-                    // 3. 呼叫後端更新
-                    console.log("正在同步圖片到雲端 row:", row);
+                    // 傳送到後端，僅傳送 row 和編碼後的圖片字串
                     await updateRow(row, 'image', base64Data);
                     
-                    // 4. 更新成功後替換本機圖片
+                    // 更新成功，更新前端顯示
                     imgElement.src = base64Data;
-                    alert("✅ 雲端照片更新成功！");
+                    imgElement.style.opacity = "1";
+                    alert("✅ 圖片更新成功！(已自動優化檔名)");
                 } catch (err) {
-                    console.error("更新失敗:", err);
-                    alert("❌ 更新失敗，請檢查網路");
+                    console.error("上傳錯誤:", err);
+                    alert("❌ 上傳失敗，請檢查網路或縮小圖檔");
                     imgElement.src = originalSrc;
+                    imgElement.style.opacity = "1";
                 }
             };
             img.src = event.target.result;
@@ -478,7 +517,12 @@
             </div>
 
             <div style="display: flex; align-items: flex-start; width: 100%;">
-                <img src="${item.image || 'https://via.placeholder.com/100'}" loading="lazy" onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
+                <img src="${item.image || 'https://via.placeholder.com/100'}" 
+                     loading="lazy" 
+                     style="cursor: pointer;" 
+                     onclick="viewImage(this.src)"
+                     onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
+                
                 <div class="item-info" style="flex: 1; padding-right: 80px;">
                     <span class="comm-text" style="color: #2c3e50; font-size: 14px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${item.communityName || '無'}</span>
                     <span class="id-text" style="color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px;">👤 LINE: ${item.lineName || '無'}</span>
@@ -579,19 +623,43 @@
     async function deleteRow(row) { if(confirm("確定刪除？")) { await fetch(GOOGLE_SCRIPT_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ method: "DELETE", row: row }) }); prepareInventoryList(); } }
 
     document.getElementById('cameraInput').addEventListener('change', function(e) {
-        const file = e.target.files[0], reader = new FileReader();
-        reader.onload = function(e) {
-            const img = new Image();
-            img.onload = function() {
-                const cvs = document.createElement('canvas'); const scale = 800/img.width; cvs.width=800; cvs.height=img.height*scale;
-                cvs.getContext('2d').drawImage(img,0,0,800,cvs.height);
-                compressedImageData = cvs.toDataURL('image/jpeg', 0.7);
-                document.getElementById('preview').src = compressedImageData; document.getElementById('preview').style.display='block';
-            };
-            img.src = e.target.result;
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // 顯示讀取中提示（如果有預覽圖區塊）
+    const previewImg = document.getElementById('preview');
+    if (previewImg) previewImg.style.opacity = '0.5';
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        const img = new Image();
+        img.onload = function() {
+            const cvs = document.createElement('canvas');
+            
+            // 💡 優化：將最大寬度限制在 600px，有效防止 Base64 爆量
+            const maxW = 600; 
+            const scale = Math.min(1, maxW / img.width); 
+            cvs.width = img.width * scale;
+            cvs.height = img.height * scale;
+            
+            const ctx = cvs.getContext('2d');
+            ctx.drawImage(img, 0, 0, cvs.width, cvs.height);
+            
+            // 💡 優化：品質調降至 0.5 (JPEG)，體積會比 0.7 小非常多
+            // 這能解決「Xiaomi Smart Camera...」這類高解析照片傳不動的問題
+            compressedImageData = cvs.toDataURL('image/jpeg', 0.5);
+            
+            if (previewImg) {
+                previewImg.src = compressedImageData;
+                previewImg.style.display = 'block';
+                previewImg.style.opacity = '1';
+            }
+            console.log("✅ 圖片壓縮完成，長度：", compressedImageData.length);
         };
-        reader.readAsDataURL(file);
-    });
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+});
 
     async function addToInventory() {
         const comm = document.getElementById('inCommName').value; 
