@@ -376,41 +376,55 @@
     document.getElementById('statQty').innerText = `📦 ${totalQty} 件`;
 }
 
-    function triggerEditPhoto(row) {
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.accept = 'image/*';
-        fileInput.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const imgElement = document.getElementById(`img_${row}`);
-            const originalSrc = imgElement.src;
-            imgElement.src = "https://via.placeholder.com/100?text=上傳中...";
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const img = new Image();
-                img.onload = async function() {
-                    const cvs = document.createElement('canvas');
-                    const scale = 800 / img.width;
-                    cvs.width = 800;
-                    cvs.height = img.height * scale;
-                    cvs.getContext('2d').drawImage(img, 0, 0, 800, cvs.height);
-                    const base64Data = cvs.toDataURL('image/jpeg', 0.7);
-                    try {
-                        await updateRow(row, 'image', base64Data);
-                        imgElement.src = base64Data;
-                        alert("照片更新成功！");
-                    } catch (err) {
-                        alert("更新失敗");
-                        imgElement.src = originalSrc;
-                    }
-                };
-                img.src = event.target.result;
+    async function triggerEditPhoto(row) {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const imgElement = document.getElementById(`img_${row}`);
+        const originalSrc = imgElement.src;
+        
+        // 1. UI 先顯示上傳中
+        imgElement.src = "https://via.placeholder.com/100?text=上傳中...";
+
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const img = new Image();
+            img.onload = async function() {
+                // 2. 壓縮圖片 (維持 800px 寬度)
+                const cvs = document.createElement('canvas');
+                const scale = 800 / img.width;
+                cvs.width = 800;
+                cvs.height = img.height * scale;
+                const ctx = cvs.getContext('2d');
+                ctx.drawImage(img, 0, 0, 800, cvs.height);
+                
+                // 使用 0.6 品質進一步壓縮體積
+                const base64Data = cvs.toDataURL('image/jpeg', 0.6); 
+
+                try {
+                    // 3. 呼叫後端更新
+                    console.log("正在同步圖片到雲端 row:", row);
+                    await updateRow(row, 'image', base64Data);
+                    
+                    // 4. 更新成功後替換本機圖片
+                    imgElement.src = base64Data;
+                    alert("✅ 雲端照片更新成功！");
+                } catch (err) {
+                    console.error("更新失敗:", err);
+                    alert("❌ 更新失敗，請檢查網路");
+                    imgElement.src = originalSrc;
+                }
             };
-            reader.readAsDataURL(file);
+            img.src = event.target.result;
         };
-        fileInput.click();
-    }
+        reader.readAsDataURL(file);
+    };
+    fileInput.click();
+}
 
     async function preparePickList() {
         const btn = document.getElementById('pickSyncBtn');
@@ -551,7 +565,17 @@
         document.getElementById('noteModal').style.display = 'none'; prepareInventoryList();
     }
 
-    async function updateRow(row, key, val) { await fetch(GOOGLE_SCRIPT_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ method: "UPDATE", row, [key]: val }) }); }
+    async function updateRow(row, key, val) {
+    return fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors", // 配合 Google Apps Script 的特殊限制
+        body: JSON.stringify({
+            method: "UPDATE",
+            row: parseInt(row),
+            [key]: val
+        })
+    });
+}
     async function deleteRow(row) { if(confirm("確定刪除？")) { await fetch(GOOGLE_SCRIPT_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ method: "DELETE", row: row }) }); prepareInventoryList(); } }
 
     document.getElementById('cameraInput').addEventListener('change', function(e) {
