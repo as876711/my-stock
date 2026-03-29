@@ -113,15 +113,43 @@
         <h2 style="margin:0 0 10px 0;">📥 拍照入庫</h2>
         <input type="file" id="cameraInput" accept="image/*" capture="environment">
         <img id="preview" style="width:100%; border-radius:10px; display:none; margin-top:10px;" onerror="this.src='https://via.placeholder.com/300?text=圖片載入失敗'">
+        
         <input type="text" id="inCommName" list="commList" placeholder="💬 社群 ID(必填)">
-<datalist id="commList"></datalist>
+        <datalist id="commList"></datalist>
         <input type="text" id="inLineName" list="lineList" placeholder="👤 LINE ID ">
-<datalist id="lineList"></datalist>
-        <input type="number" id="inQty" value="1">
-        <input type="number" id="inPrice" placeholder="💰 金額">
-        <select id="inPartner"></select>
-        <textarea id="inNote" placeholder="📝 備註 (規格、顏色...)" style="height:80px;"></textarea>
-        <button id="inBtn" onclick="addToInventory()" style="background:#007bff; color:white; height:50px; margin-top:10px;">確認同步入庫</button>
+        <datalist id="lineList"></datalist>
+
+        <div style="display: flex; gap: 10px;">
+            <div style="flex: 1;">
+                <label style="font-size: 12px; color: #666; margin-left: 5px;">📦 數量</label>
+                <input type="number" id="inQty" value="1" style="margin-top: 2px;">
+            </div>
+            <div style="flex: 1;">
+                <label style="font-size: 12px; color: #666; margin-left: 5px;">💰 金額</label>
+                <input type="number" id="inPrice" placeholder="金額" style="margin-top: 2px;">
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 5px;">
+            <div style="flex: 1;">
+                <label style="font-size: 12px; color: #666; margin-left: 5px;">🏢 廠商</label>
+                <select id="inPartner" style="margin-top: 2px;"></select>
+            </div>
+            <div style="flex: 1;">
+                <label style="font-size: 12px; color: #666; margin-left: 5px;">🚩 狀態</label>
+                <select id="inStatus" style="margin-top: 2px;">
+                    <option value="📝 已登記" selected>📝 已登記</option>
+                    <option value="🛒 已採買">🛒 已採買</option>
+                    <option value="❌ 尚未買">❌ 尚未買</option>
+                    <option value="⚠️ 缺貨">⚠️ 缺貨</option>
+                    <option value="📦 已到貨">📦 已到貨</option>
+                    <option value="✅ 出貨完成">✅ 出貨完成</option>
+                </select>
+            </div>
+        </div>
+
+        <textarea id="inNote" placeholder="📝 備註 (規格、顏色...)" style="height:80px; margin-top: 10px;"></textarea>
+        <button id="inBtn" onclick="addToInventory()" style="background:#007bff; color:white; height:50px; margin-top:15px;">確認同步入庫</button>
     </div>
 </div>
 
@@ -259,15 +287,19 @@
     const debouncedFilterPick = debounce(filterPick);
 
     function initSelectors() {
-        const pStr = partners.map(p => `<option value="${p}">${p}</option>`).join('');
-        const sStr = statusOpts.map(s => `<option value="${s}">${s}</option>`).join('');
-        document.getElementById('inPartner').innerHTML = pStr;
-        document.getElementById('filterPartner').innerHTML = '<option value="">-- 代購 --</option>' + pStr;
-        document.getElementById('filterStatus').innerHTML = '<option value="">-- 狀態 --</option>' + sStr;
-        document.getElementById('pickFilterPartner').innerHTML = '<option value="">-- 全部代購 --</option>' + pStr;
-        document.getElementById('pickFilterStatus').innerHTML = '<option value="">-- 全部狀態 --</option>' + sStr;
-        document.getElementById('pickFilterStatus').value = "📦 已到貨";
-    }
+    const pStr = partners.map(p => `<option value="${p}">${p}</option>`).join('');
+    const sStr = statusOpts.map(s => `<option value="${s}">${s}</option>`).join('');
+
+    document.getElementById('inPartner').innerHTML = pStr;
+    // 同步入庫頁面的狀態選單
+    document.getElementById('inStatus').innerHTML = sStr; 
+
+    document.getElementById('filterPartner').innerHTML = '<option value="">-- 代購 --</option>' + pStr;
+    document.getElementById('filterStatus').innerHTML = '<option value="">-- 狀態 --</option>' + sStr;
+    document.getElementById('pickFilterPartner').innerHTML = '<option value="">-- 全部代購 --</option>' + pStr;
+    document.getElementById('pickFilterStatus').innerHTML = '<option value="">-- 全部狀態 --</option>' + sStr;
+    document.getElementById('pickFilterStatus').value = "📦 已到貨";
+}
     initSelectors();
 
     function autoFillLineID() {
@@ -692,9 +724,6 @@
     btn.innerText = "同步中...";
 
     try {
-        // 1. 確保圖片資料是最新且經過 Canvas 處理的 (由前面的 cameraInput 監聽器產生)
-        // 這裡我們直接使用已經在 cameraInput 裡壓縮好的 compressedImageData
-        
         const payload = {
             method: "ADD",
             lineName: document.getElementById('inLineName').value || "",
@@ -703,12 +732,12 @@
             price: document.getElementById('inPrice').value || 0,
             partner: document.getElementById('inPartner').value || "",
             note: document.getElementById('inNote').value || "",
-            status: "📝 已登記",
-            // 💡 關鍵：只傳送純編碼，不夾帶任何原始檔案的 metadata
+            // --- 修改這裡：從 HTML 選單抓取狀態 ---
+            status: document.getElementById('inStatus').value, 
+            // --------------------------------------
             image: typeof compressedImageData !== 'undefined' ? compressedImageData : ""
         };
 
-        // 2. 使用最穩定的傳輸設定
         await fetch(GOOGLE_SCRIPT_URL, { 
             method: "POST", 
             mode: "no-cors", 
@@ -716,11 +745,11 @@
             body: JSON.stringify(payload) 
         });
 
-        alert("✅ 入庫成功！(長檔名防禦已啟動)");
-        location.reload(); // 成功後刷新頁面
+        alert("✅ 入庫成功！");
+        location.reload(); 
     } catch (err) {
         console.error("入庫出錯:", err);
-        alert("❌ 入庫失敗，請檢查網路或嘗試重新拍照");
+        alert("❌ 入庫失敗");
         btn.disabled = false;
         btn.innerText = "重新同步";
     }
