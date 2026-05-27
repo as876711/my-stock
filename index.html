@@ -65,6 +65,12 @@
             appearance: auto; 
         }
         .btn-del-red { background: #ff4d4d; color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; }
+        .upload-state { display: none; margin-top: 8px; padding: 9px 11px; border-radius: 8px; font-size: 13px; background: #eef6ff; color: #1456a0; }
+        .upload-state.visible { display: block; }
+        .upload-state.success { background: #e9f8ee; color: #14753b; }
+        .upload-state.error { background: #fff0f0; color: #b42318; }
+        .pick-confirm-btn { background:#15803d; color:white; height:46px; margin-top:12px; }
+        .pick-confirm-btn:disabled { background:#cbd5e1; color:#64748b; cursor:not-allowed; }
 
         #printOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 5000; overflow-y: auto; padding: 20px; }
         .print-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
@@ -113,6 +119,7 @@
         <h2 style="margin:0 0 10px 0;">📥 拍照入庫</h2>
         <input type="file" id="cameraInput" accept="image/*" capture="environment">
         <img id="preview" style="width:100%; border-radius:10px; display:none; margin-top:10px;" onerror="this.src='https://via.placeholder.com/300?text=圖片載入失敗'">
+        <div id="imageUploadState" class="upload-state" aria-live="polite"></div>
         
         <input type="text" id="inCommName" list="commList" placeholder="💬 社群 ID(必填)">
         <datalist id="commList"></datalist>
@@ -187,24 +194,23 @@
         <button id="pickSyncBtn" onclick="preparePickList()" style="background:#2ecc71; color:white; font-size:14px; height:45px; margin-top: 10px; border-radius: 12px;">🔄 刷新同步雲端庫存</button>
     </div>
 
-    <div id="pickListContainer"></div>
-
     <div class="card" style="border-top: 5px solid #27ae60;">
         <h3 style="margin-top:0; display: flex; justify-content: space-between; align-items: center;">
-            📋 待出貨確認
+            📋 已選明細
             <span id="pickStatCount" style="font-size: 14px; background: #27ae60; color: white; padding: 2px 8px; border-radius: 20px;">0 件</span>
         </h3>
-        <div id="pickSummary" style="background: #f1f8e9; padding: 12px; border-radius: 10px; border: 1px dashed #2ecc71; font-size: 14px; min-height: 40px; color: #555;">
+        <div id="pickSummary" style="background: #f1f8e9; padding: 12px; border-radius: 8px; border: 1px dashed #2ecc71; font-size: 14px; min-height: 40px; color: #555;">
             尚未選取商品
         </div>
         
-        <div id="pickTotalDisplay" style="margin-top: 15px; padding: 12px; background: #fff; border-radius: 10px; border: 2px solid #27ae60; text-align: center; display: none;">
+        <div id="pickTotalDisplay" style="margin-top: 15px; padding: 12px; background: #fff; border-radius: 8px; border: 2px solid #27ae60; text-align: center; display: none;">
             <div style="font-size: 14px; color: #666;">本次預計收款總計</div>
             <div id="pickTotalAmount" style="font-size: 24px; font-weight: bold; color: #e74c3c;">$0</div>
         </div>
-
-        <button onclick="confirmPickAndShowSheet()" style="background: #27ae60; color:white; margin-top:15px; height:50px;">✅ 結案並產生明細表</button>
+        <button id="createPickSheetBtn" class="pick-confirm-btn" onclick="confirmPickAndShowSheet()" disabled>結案並產生明細表</button>
     </div>
+
+    <div id="pickListContainer"></div>
 </div>
 
 <div id="printOverlay">
@@ -263,10 +269,16 @@
     <div class="nav-item" onclick="showPage('pickPage', this); preparePickList();"><span>🛒</span><span>檢貨</span></div>
 </div>
 <script>
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyJB8bx6ORjqtVDVkpoOWhXrObiszG1bYL7yBbsSSslCHv5JLwvfv9YoyOoOD8IeL6M1A/exec"; 
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzQDuxZ7VyMl9kQvZOlBGSx1qLYCG_OS70fyzJgzZaOCbDKA4tmTNmKzqmQBboa1rH23A/exec"; 
     let rawStockData = [];
     let tempPickList = [];
     let compressedImageData = "";
+    let inventoryPage = 1;
+    let inventoryHasMore = false;
+    let inventoryTotal = 0;
+    let pickPage = 1;
+    let pickHasMore = false;
+    const PAGE_SIZE = 30;
     
     // --- 效能優化變數 ---
     let lastFetchTime = 0;
@@ -274,6 +286,86 @@
     
     const partners = ["萌寶目錄預購","東京速換金","妮小舖","NAZI夏批發","香港中國同行批發","橙日(日本奇異果)","ココ購","日和優選","東京買買","自行購買","尚未安排"];
     const statusOpts = ["📝 已登記","🛒 已採買","❌ 尚未買","⚠️ 缺貨","📦 已到貨","✅ 出貨完成"];
+
+    function escapeHTML(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        })[char]);
+    }
+
+    function escapeAttr(value) {
+        return escapeHTML(value);
+    }
+
+    function noteArg(value) {
+        return encodeURIComponent(String(value ?? ''));
+    }
+
+    function normalizeApiItems(data) {
+        if (Array.isArray(data)) return { items: data, total: data.length, hasMore: false };
+        if (data && data.ok === false) throw new Error(data.message || "雲端回傳失敗");
+        return {
+            items: Array.isArray(data?.items) ? data.items : [],
+            total: Number(data?.total || 0),
+            hasMore: Boolean(data?.hasMore)
+        };
+    }
+
+    async function apiGet(params = {}) {
+        const url = new URL(GOOGLE_SCRIPT_URL);
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== "") {
+                url.searchParams.set(key, value);
+            }
+        });
+        const res = await fetch(url.toString());
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+    }
+
+    function setUploadState(message, state = '') {
+        const box = document.getElementById('imageUploadState');
+        if (!box) return;
+        box.textContent = message;
+        box.className = `upload-state visible ${state}`.trim();
+    }
+
+    function newRequestId() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        return `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    async function waitForWriteResult(requestId) {
+        for (let attempt = 0; attempt < 7; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 800));
+            const last = await apiGet({ mode: 'diagnostics', _: Date.now() });
+            if (last.requestId !== requestId) continue;
+            if (last.ok === false) throw new Error(last.message || '同步失敗');
+            return { verified: true, ...last };
+        }
+        return { verified: false };
+    }
+
+    async function postToGoogle(payload) {
+        const requestId = payload.requestId || newRequestId();
+        const body = JSON.stringify({ ...payload, requestId });
+        try {
+            await fetch(GOOGLE_SCRIPT_URL, {
+                method: "POST",
+                mode: "no-cors",
+                headers: { "Content-Type": "text/plain;charset=utf-8" },
+                body
+            });
+            return await waitForWriteResult(requestId);
+        } catch (err) {
+            console.error("同步送出失敗。", err);
+            throw err;
+        }
+    }
 
     function debounce(func, delay = 300) {
         let timer;
@@ -287,8 +379,8 @@
     const debouncedFilterPick = debounce(filterPick);
 
     function initSelectors() {
-    const pStr = partners.map(p => `<option value="${p}">${p}</option>`).join('');
-    const sStr = statusOpts.map(s => `<option value="${s}">${s}</option>`).join('');
+    const pStr = partners.map(p => `<option value="${escapeAttr(p)}">${escapeHTML(p)}</option>`).join('');
+    const sStr = statusOpts.map(s => `<option value="${escapeAttr(s)}">${escapeHTML(s)}</option>`).join('');
 
     document.getElementById('inPartner').innerHTML = pStr;
     // 同步入庫頁面的狀態選單
@@ -317,7 +409,7 @@
         document.getElementById(p).classList.add('active-page');
         document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
         el.classList.add('active');
-        if (p === 'add' || p === 'list') { getLatestData(); }
+        if (p === 'addPage') { getLatestData(); }
     }
 
     async function getLatestData(force = false) {
@@ -326,26 +418,45 @@
             return rawStockData;
         }
         try {
-            const res = await fetch(GOOGLE_SCRIPT_URL);
-            rawStockData = await res.json();
+            const data = await apiGet({ mode: "list", page: 1, pageSize: 100 });
+            rawStockData = normalizeApiItems(data).items;
             lastFetchTime = Date.now();
             
             const comms = [...new Set(rawStockData.map(i => i.communityName).filter(n => n))];
             const lines = [...new Set(rawStockData.map(i => i.lineName).filter(n => n))];
             const cList = document.getElementById('commList');
             const lList = document.getElementById('lineList');
-            if(cList) cList.innerHTML = comms.map(c => `<option value="${c}">`).join('');
-            if(lList) lList.innerHTML = lines.map(l => `<option value="${l}">`).join('');
-        } catch(e) { console.error("資料讀取失敗"); }
+            if(cList) cList.innerHTML = comms.map(c => `<option value="${escapeAttr(c)}">`).join('');
+            if(lList) lList.innerHTML = lines.map(l => `<option value="${escapeAttr(l)}">`).join('');
+        } catch(e) {
+            console.error("資料讀取失敗", e);
+            throw e;
+        }
         return rawStockData;
+    }
+
+    function getInventoryFilters() {
+        return {
+            keyword: document.getElementById('filterID').value.toLowerCase().trim(),
+            partner: document.getElementById('filterPartner').value,
+            status: document.getElementById('filterStatus').value
+        };
+    }
+
+    function getPickFilters() {
+        return {
+            keyword: document.getElementById('pickSearchID').value.toLowerCase().trim(),
+            partner: document.getElementById('pickFilterPartner').value,
+            status: document.getElementById('pickFilterStatus').value
+        };
     }
 
     async function prepareInventoryList() {
         const btn = document.getElementById('syncListBtn');
-        if(btn) { btn.disabled = true; btn.innerText = "🔄 正在讀取資料..."; }
+        if(btn) { btn.disabled = true; btn.innerText = "🔄 正在讀取第 1 頁..."; }
         try {
-            await getLatestData(true);
-            combinedFilter();
+            inventoryPage = 1;
+            await loadInventoryPage(false);
             if(btn) {
                 btn.innerText = "✅ 同步完成！";
                 setTimeout(() => { btn.disabled = false; btn.innerText = "🔄 點此同步最新雲端庫存"; }, 1000);
@@ -353,29 +464,56 @@
         } catch (e) { alert("同步失敗"); if(btn) btn.disabled = false; }
     }
 
-    function combinedFilter() {
-        const idK = document.getElementById('filterID').value.toLowerCase().trim();
-        const pK = document.getElementById('filterPartner').value;
-        const sK = document.getElementById('filterStatus').value;
-        const filtered = rawStockData.filter(i => {
-            const mI = String(i.lineName).toLowerCase().includes(idK) || 
-                       String(i.communityName).toLowerCase().includes(idK) ||
-                       String(i.note || "").toLowerCase().includes(idK);
-            const mP = (pK === "" || i.partner === pK);
-            if (sK === "") return mI && mP && (i.status !== "✅ 出貨完成");
-            return mI && mP && (i.status === sK);
+    async function loadInventoryPage(append = false) {
+        const filters = getInventoryFilters();
+        const data = await apiGet({
+            mode: "list",
+            page: inventoryPage,
+            pageSize: PAGE_SIZE,
+            keyword: filters.keyword,
+            partner: filters.partner,
+            status: filters.status
         });
-        renderList(filtered);
+        const result = normalizeApiItems(data);
+        inventoryHasMore = result.hasMore;
+        inventoryTotal = result.total;
+        rawStockData = append ? rawStockData.concat(result.items) : result.items;
+        renderList(rawStockData, { total: result.total });
     }
 
-    function viewImage(src) {
+    async function loadMoreInventory() {
+        if (!inventoryHasMore) return;
+        inventoryPage += 1;
+        await loadInventoryPage(true);
+    }
+
+    async function combinedFilter() {
+        inventoryPage = 1;
+        document.getElementById('inventoryContainer').innerHTML = '搜尋中...';
+        try {
+            await loadInventoryPage(false);
+        } catch (e) {
+            console.error(e);
+            document.getElementById('inventoryContainer').innerHTML = '搜尋失敗，請稍後再試。';
+        }
+    }
+
+    async function viewImage(src, rowId) {
     const viewer = document.getElementById('imageViewer');
     const fullImg = document.getElementById('fullImage');
     fullImg.src = src;
     viewer.style.display = 'flex';
+    if (rowId) {
+        try {
+            const data = await apiGet({ mode: "item", rowId });
+            if (data?.ok && data.item?.imageUrl) fullImg.src = data.item.imageUrl;
+        } catch (e) {
+            console.warn("讀取原圖失敗，改顯示縮圖。", e);
+        }
     }
-    
-    function renderList(items) {
+    }
+
+    function renderList(items, meta = {}) {
     let totalCash = 0, arrivedCash = 0, totalQty = 0;
     const htmlBuffer = [];
     
@@ -388,35 +526,33 @@
         if (item.status === "📦 已到貨") arrivedCash += itemValue;
 
         const rawNote = item.note || '';
-        const safeNoteForJS = rawNote.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
-        const displayNote = rawNote ? rawNote.replace(/\n/g, '<br>') : '+ 補備註';
+        const safeNoteForJS = noteArg(rawNote);
+        const displayNote = rawNote ? escapeHTML(rawNote).replace(/\n/g, '<br>') : '+ 補備註';
+        const safeImage = escapeAttr(item.image || 'https://via.placeholder.com/100');
+        const safeCommunityName = escapeHTML(item.communityName || '無');
+        const safeLineName = escapeHTML(item.lineName || '');
 
         htmlBuffer.push(`
         <div class="inventory-item" style="position: relative; flex-direction: column; align-items: stretch; ${item.status === '📦 已到貨' ? 'border-left-color: #27ae60;' : ''}">
-            
             <div style="position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; z-index: 10;">
-                <button onclick="triggerEditPhoto(${item.row})" 
+                <button onclick="triggerEditPhoto(${item.row})"
                         style="width: 70px; height: 32px; background: #3498db; color: white; border-radius: 6px; font-size: 11px; font-weight: bold; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; padding: 0;">
                     <span>📷</span><span>換圖</span>
                 </button>
-                <button onclick="deleteRow(${item.row})" 
+                <button onclick="deleteRow(${item.row})"
                         style="width: 70px; height: 32px; background: #ff4d4d; color: white; border-radius: 6px; font-size: 11px; font-weight: bold; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; padding: 0;">
                     <span>🗑️</span><span>刪除</span>
                 </button>
             </div>
 
             <div style="display: flex; align-items: flex-start; width: 100%;">
-                <img src="${item.image || 'https://via.placeholder.com/100'}" 
-                     id="img_${item.row}" 
-                     loading="lazy" 
-                     style="cursor: pointer;" 
-                     onclick="viewImage(this.src)"
+                <img src="${safeImage}" id="img_${item.row}" loading="lazy" style="cursor: pointer;"
+                     onclick="viewImage(this.src, '${escapeAttr(item.rowId || item.row)}')"
                      onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
-                
                 <div class="item-info" style="flex: 1; padding-right: 80px;">
-                    <span class="comm-text" style="color: #2c3e50; font-size: 20px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${item.communityName || '無'}</span>
-                    <span class="id-text" style="color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px;">👤 LINE: ${item.lineName}</span>
-                    <div class="${item.note ? 'note-text' : 'note-empty'}" onclick="openNoteModal(${item.row}, \`${safeNoteForJS}\`)" style="margin-bottom: 5px;">
+                    <span class="comm-text" style="color: #2c3e50; font-size: 20px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${safeCommunityName}</span>
+                    <span class="id-text" style="color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px;">👤 LINE: ${safeLineName}</span>
+                    <div class="${item.note ? 'note-text' : 'note-empty'}" onclick="openNoteModal(${item.row}, decodeURIComponent('${safeNoteForJS}'))" style="margin-bottom: 5px;">
                         ${item.note ? '📝 ' + displayNote : '+ 補備註'}
                     </div>
                     <div style="font-weight: bold; font-size: 16px; color: #27ae60; margin-top: auto;">
@@ -427,24 +563,32 @@
 
             <div style="display: flex; gap: 8px; margin-top: 12px; width: 100%;">
                 <select class="select-mini" style="flex: 1; height: 38px;" onchange="updateRow(${item.row}, 'partner', this.value)">
-                    ${partners.map(p => `<option value="${p}" ${item.partner === p ? 'selected' : ''}>${p}</option>`).join('')}
+                    ${partners.map(p => `<option value="${escapeAttr(p)}" ${item.partner === p ? 'selected' : ''}>${escapeHTML(p)}</option>`).join('')}
                 </select>
                 <select class="select-mini" style="flex: 1; height: 38px; ${item.status === '📦 已到貨' ? 'border-color: #27ae60; color: #27ae60 !important;' : ''}" onchange="updateRow(${item.row}, 'status', this.value)">
-                    ${statusOpts.map(s => `<option value="${s}" ${item.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                    ${statusOpts.map(s => `<option value="${escapeAttr(s)}" ${item.status === s ? 'selected' : ''}>${escapeHTML(s)}</option>`).join('')}
                 </select>
             </div>
         </div>`);
     });
 
-    document.getElementById('inventoryContainer').innerHTML = htmlBuffer.join('');
+    if (!htmlBuffer.length) {
+        document.getElementById('inventoryContainer').innerHTML = '<div class="card" style="text-align:center; color:#666;">目前沒有符合條件的庫存</div>';
+    } else {
+        document.getElementById('inventoryContainer').innerHTML = htmlBuffer.join('') + `
+            <button onclick="loadMoreInventory()" ${inventoryHasMore ? '' : 'disabled'}
+                    style="background:${inventoryHasMore ? '#007bff' : '#d0d7de'}; color:white; height:44px; margin-bottom:15px;">
+                ${inventoryHasMore ? '載入更多' : '已載入全部'}
+            </button>`;
+    }
     
     // 統計更新部分保持不變
     document.getElementById('statCash').innerHTML = `
-        <div style="text-align:center;">
+            <div style="text-align:center;">
             <div style="font-size: 11px; opacity: 0.8;">總計 / 現貨</div>
             <div>💰 $${totalCash} / <span style="color:#afffaf;">$${arrivedCash}</span></div>
         </div>`;
-    document.getElementById('statQty').innerText = `📦 ${totalQty} 件`;
+    document.getElementById('statQty').innerText = `📦 ${totalQty} 件 / 共 ${meta.total ?? items.length} 筆`;
 }
 
     async function triggerEditPhoto(row) {
@@ -488,16 +632,11 @@
                         "image": base64Data
                     });
 
-                    await fetch(GOOGLE_SCRIPT_URL, {
-                        method: "POST",
-                        mode: "no-cors",
-                        headers: { "Content-Type": "text/plain;charset=utf-8" },
-                        body: cleanJsonPayload
-                    });
+                    const result = await postToGoogle(JSON.parse(cleanJsonPayload));
 
                     // 5. 更新成功後的 UI 恢復
                     if (imgElement) {
-                        imgElement.src = base64Data;
+                        imgElement.src = result.thumbnailUrl || result.imageUrl || base64Data;
                         imgElement.style.opacity = "1";
                         imgElement.style.filter = "none";
                     }
@@ -521,32 +660,50 @@
 
     async function preparePickList() {
         const btn = document.getElementById('pickSyncBtn');
-        btn.disabled = true; btn.innerText = "🔄 正在同步雲端...";
+        btn.disabled = true; btn.innerText = "🔄 正在讀取第 1 頁...";
         try {
-            await getLatestData(true);
             document.getElementById('pickFilterStatus').value = "📦 已到貨";
-            filterPick();
+            pickPage = 1;
+            await loadPickPage(false);
             btn.innerText = "✅ 同步完成！";
             setTimeout(() => { btn.disabled = false; btn.innerText = "🔄 刷新同步雲端庫存"; }, 1000);
         } catch (e) { alert("同步失敗"); btn.disabled = false; }
     }
 
-    function filterPick() {
-    const idKey = document.getElementById('pickSearchID').value.toLowerCase().trim();
-    const statusKey = document.getElementById('pickFilterStatus').value;
-    const partnerKey = document.getElementById('pickFilterPartner').value;
-    const searchTerms = idKey ? idKey.split(/\s+/) : [];
-    
-    const items = rawStockData.filter(i => {
-        const matchSearch = searchTerms.every(term => 
-            (i.lineName && String(i.lineName).toLowerCase().includes(term)) || 
-            (i.communityName && String(i.communityName).toLowerCase().includes(term)) ||
-            (i.note && String(i.note).toLowerCase().includes(term))
-        );
-        const matchStatus = (statusKey === "" || i.status === statusKey);
-        const matchPartner = (partnerKey === "" || i.partner === partnerKey);
-        return (searchTerms.length === 0 || matchSearch) && matchStatus && matchPartner;
+    async function loadPickPage(append = false) {
+    const filters = getPickFilters();
+    const data = await apiGet({
+        mode: "list",
+        page: pickPage,
+        pageSize: PAGE_SIZE,
+        keyword: filters.keyword,
+        partner: filters.partner,
+        status: filters.status
     });
+    const result = normalizeApiItems(data);
+    pickHasMore = result.hasMore;
+    rawStockData = append ? rawStockData.concat(result.items) : result.items;
+    renderPickList(rawStockData);
+}
+
+    async function loadMorePick() {
+    if (!pickHasMore) return;
+    pickPage += 1;
+    await loadPickPage(true);
+}
+
+    async function filterPick() {
+    pickPage = 1;
+    document.getElementById('pickListContainer').innerHTML = '搜尋中...';
+    try {
+        await loadPickPage(false);
+    } catch (e) {
+        console.error(e);
+        document.getElementById('pickListContainer').innerHTML = '搜尋失敗，請稍後再試。';
+    }
+}
+
+    function renderPickList(items) {
 
     const htmlBuffer = items.map(item => {
         const isPicked = tempPickList.some(p => p.row === item.row);
@@ -555,8 +712,13 @@
         const btnText = isPicked ? "已選" : (isOutOfStock ? "無貨" : "選取");
         
         const rawNote = item.note || '';
-        const safeNoteForJS = rawNote.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
-        const displayNote = rawNote ? rawNote.replace(/\n/g, '<br>') : '+ 補備註';
+        const safeNoteForJS = noteArg(rawNote);
+        const displayNote = rawNote ? escapeHTML(rawNote).replace(/\n/g, '<br>') : '+ 補備註';
+        const safeImage = escapeAttr(item.image || 'https://via.placeholder.com/100');
+        const safeCommunityName = escapeHTML(item.communityName || '無');
+        const safeLineName = escapeHTML(item.lineName || '無');
+        const safePartner = escapeHTML(item.partner || '未安排');
+        const safeStatus = escapeHTML(item.status || '');
         
         return `
         <div class="inventory-item" style="position: relative; flex-direction: column; align-items: stretch; ${isDisable ? 'opacity: 0.7;' : ''}">
@@ -571,16 +733,16 @@
             </div>
 
             <div style="display: flex; align-items: flex-start; width: 100%;">
-                <img src="${item.image || 'https://via.placeholder.com/100'}" 
+                <img src="${safeImage}" 
                      loading="lazy" 
                      style="cursor: pointer;" 
-                     onclick="viewImage(this.src)"
+                     onclick="viewImage(this.src, '${escapeAttr(item.rowId || item.row)}')"
                      onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
                 
                 <div class="item-info" style="flex: 1; padding-right: 80px;">
-                    <span class="comm-text" style="color: #2c3e50; font-size: 14px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${item.communityName || '無'}</span>
-                    <span class="id-text" style="color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px;">👤 LINE: ${item.lineName || '無'}</span>
-                    <div class="${item.note ? 'note-text' : 'note-empty'}" onclick="openNoteModal(${item.row}, \`${safeNoteForJS}\`)" style="margin-bottom: 5px;">
+                    <span class="comm-text" style="color: #2c3e50; font-size: 14px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${safeCommunityName}</span>
+                    <span class="id-text" style="color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px;">👤 LINE: ${safeLineName}</span>
+                    <div class="${item.note ? 'note-text' : 'note-empty'}" onclick="openNoteModal(${item.row}, decodeURIComponent('${safeNoteForJS}'))" style="margin-bottom: 5px;">
                         ${item.note ? '📝 ' + displayNote : '+ 補備註'}
                     </div>
                     <div style="font-weight: bold; font-size: 16px; color: #27ae60; margin-top: auto;">
@@ -591,24 +753,33 @@
 
             <div style="display: flex; gap: 8px; margin-top: 12px; width: 100%;">
                 <div class="select-mini" style="flex: 1; text-align: center; border-color: #ddd; background: #f9f9f9; display: flex; align-items: center; justify-content: center; height: 38px;">
-                    ${item.partner || '未安排'}
+                    ${safePartner}
                 </div>
                 <div class="select-mini" style="flex: 1; text-align: center; border-color: #2ecc71; color: #27ae60; background: #f1f8e9; display: flex; align-items: center; justify-content: center; height: 38px;">
-                    ${item.status}
+                    ${safeStatus}
                 </div>
             </div>
         </div>`;
     }).join('');
     
-    document.getElementById('pickListContainer').innerHTML = htmlBuffer;
+    if (!htmlBuffer.length) {
+        document.getElementById('pickListContainer').innerHTML = '<div class="card" style="text-align:center; color:#666;">目前沒有符合條件的檢貨項目</div>';
+    } else {
+        document.getElementById('pickListContainer').innerHTML = htmlBuffer + `
+            <button onclick="loadMorePick()" ${pickHasMore ? '' : 'disabled'}
+                    style="background:${pickHasMore ? '#2ecc71' : '#d0d7de'}; color:white; height:44px; margin-bottom:15px;">
+                ${pickHasMore ? '載入更多' : '已載入全部'}
+            </button>`;
+    }
 }
 
     function addPick(row) {
         const item = rawStockData.find(i => i.row === row);
+        if (!item) return alert("找不到這筆商品，請先重新同步。");
         const qty = Number(document.getElementById(`pQty_${row}`).value);
         if (qty <= 0 || qty > item.qty) return alert("數量錯誤");
         tempPickList.push({ ...item, pickQty: qty });
-        renderSummary(); filterPick();
+        renderSummary(); renderPickList(rawStockData);
     }
 
     function renderSummary() {
@@ -616,17 +787,33 @@
         const statCount = document.getElementById('pickStatCount');
         const totalDisplay = document.getElementById('pickTotalDisplay');
         const totalAmount = document.getElementById('pickTotalAmount');
-        if(!tempPickList.length) { box.innerHTML = "尚未選取商品"; statCount.innerText = "0 件"; totalDisplay.style.display = 'none'; return; }
+        const confirmButton = document.getElementById('createPickSheetBtn');
+        if(!tempPickList.length) {
+            box.innerHTML = "尚未選取商品";
+            statCount.innerText = "0 件";
+            totalDisplay.style.display = 'none';
+            confirmButton.disabled = true;
+            return;
+        }
         let totalQty = 0, totalPrice = 0;
         box.innerHTML = tempPickList.map((i, idx) => {
             totalQty += i.pickQty; totalPrice += (i.price * i.pickQty);
-            const displayName = i.communityName ? i.communityName : i.lineName;
-            return `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding:10px; background:white; border-radius:10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);"><div style="display:flex; flex-direction:column;"><span style="font-weight:bold; color:#2c3e50; font-size:14px;">💬 ${displayName}</span><span style="font-size:12px; color:#7f8c8d;">數量: ${i.pickQty} | 小計: $${i.price * i.pickQty}</span></div><button onclick="removeItem(${idx}, ${i.row})" style="width:auto; background:#ff4d4d; color:white; padding:5px 10px; border-radius:6px; font-size:12px;">移除</button></div>`;
+            const displayName = escapeHTML(i.communityName ? i.communityName : i.lineName);
+            const safeImage = escapeAttr(i.image || 'https://via.placeholder.com/100?text=無圖片');
+            return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; padding:8px; background:white; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
+                <img src="${safeImage}" loading="lazy" onclick="viewImage(this.src, '${escapeAttr(i.rowId || i.row)}')" onerror="this.src='https://via.placeholder.com/100?text=無圖片'" style="width:60px; height:60px; border-radius:8px; object-fit:cover; flex-shrink:0; cursor:pointer; border:1px solid #eef0f2;">
+                <div style="display:flex; flex-direction:column; flex:1; min-width:0;">
+                    <span style="font-weight:bold; color:#2c3e50; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">💬 ${displayName}</span>
+                    <span style="font-size:12px; color:#7f8c8d;">數量: ${i.pickQty} | 小計: $${i.price * i.pickQty}</span>
+                </div>
+                <button onclick="removeItem(${idx}, ${i.row})" style="width:auto; flex-shrink:0; background:#ff4d4d; color:white; padding:7px 10px; border-radius:6px; font-size:12px;">移除</button>
+            </div>`;
         }).join('');
         statCount.innerText = `${totalQty} 件`; totalAmount.innerText = `$${totalPrice}`; totalDisplay.style.display = 'block';
+        confirmButton.disabled = false;
     }
 
-    function removeItem(idx, row) { tempPickList.splice(idx, 1); renderSummary(); filterPick(); }
+    function removeItem(idx, row) { tempPickList.splice(idx, 1); renderSummary(); renderPickList(rawStockData); }
 
     function confirmPickAndShowSheet() {
         const name = document.getElementById('pickCollectorName').value;
@@ -637,8 +824,10 @@
         let total = 0, tableHtml = "";
         tempPickList.forEach(i => {
             total += i.price * i.pickQty;
-            const displayName = i.communityName ? i.communityName : i.lineName;
-            tableHtml += `<tr style="border-bottom: 1px solid #eee;"><td style="width: 150px; padding: 10px; text-align: center;"><img src="${i.image || 'https://via.placeholder.com/150'}" style="width:150px; height:150px; object-fit:cover; border-radius:8px;"></td><td style="text-align:left; padding: 15px;"><div style="font-weight:bold; font-size: 18px;">💬 ${displayName}</div><div style="font-size:14px; color:#555; margin-top:5px; background:#f9f9f9; padding:5px; border-radius:4px;">${i.note ? '📝 ' + i.note : '(無備註)'}</div></td><td style="text-align:center; width: 60px;">${i.pickQty}</td><td style="text-align:center; width: 90px; font-weight:bold; color: #e74c3c;">$${i.price * i.pickQty}</td></tr>`;
+            const displayName = escapeHTML(i.communityName ? i.communityName : i.lineName);
+            const displayNote = i.note ? '📝 ' + escapeHTML(i.note).replace(/\n/g, '<br>') : '(無備註)';
+            const safeImage = escapeAttr(i.image || 'https://via.placeholder.com/150');
+            tableHtml += `<tr style="border-bottom: 1px solid #eee;"><td style="width: 150px; padding: 10px; text-align: center;"><img src="${safeImage}" style="width:150px; height:150px; object-fit:cover; border-radius:8px;"></td><td style="text-align:left; padding: 15px;"><div style="font-weight:bold; font-size: 18px;">💬 ${displayName}</div><div style="font-size:14px; color:#555; margin-top:5px; background:#f9f9f9; padding:5px; border-radius:4px;">${displayNote}</div></td><td style="text-align:center; width: 60px;">${i.pickQty}</td><td style="text-align:center; width: 90px; font-weight:bold; color: #e74c3c;">$${i.price * i.pickQty}</td></tr>`;
         });
         document.getElementById('resTableBody').innerHTML = tableHtml; document.getElementById('resTotal').innerText = `$${total}`;
         document.getElementById('printOverlay').style.display = 'block'; document.getElementById('printOverlay').scrollTo(0, 0);
@@ -648,39 +837,67 @@
         if(!confirm("確定要扣庫存結案嗎？")) return;
         const btn = document.getElementById('finalConfirmBtn'); btn.disabled = true; btn.innerText = "🚀 同步中...";
         try {
-            for(let item of tempPickList) {
-                const newQty = item.qty - item.pickQty;
-                await fetch(GOOGLE_SCRIPT_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ method: "UPDATE", row: item.row, qty: newQty, status: newQty <= 0 ? "✅ 出貨完成" : item.status }) });
-            }
+            await postToGoogle({
+                method: "SHIP_BATCH",
+                collectorName: document.getElementById('pickCollectorName').value,
+                items: tempPickList.map(item => ({
+                    rowId: item.rowId,
+                    row: item.row,
+                    pickQty: item.pickQty
+                }))
+            });
             alert("結案成功"); location.reload();
         } catch (e) { alert("失敗"); btn.disabled = false; }
     }
 
     function openNoteModal(row, note) { document.getElementById('editNoteRow').value = row; document.getElementById('editNoteInput').value = note; document.getElementById('noteModal').style.display = 'flex'; }
+
+    function applyNoteLocally(row, note) {
+        rawStockData.forEach(item => {
+            if (Number(item.row) === row) item.note = note;
+        });
+        tempPickList.forEach(item => {
+            if (Number(item.row) === row) item.note = note;
+        });
+        if (document.getElementById('listPage').classList.contains('active-page')) renderList(rawStockData, { total: inventoryTotal });
+        if (document.getElementById('pickPage').classList.contains('active-page')) {
+            renderPickList(rawStockData);
+            renderSummary();
+        }
+    }
+
     async function saveNote() {
-        const row = document.getElementById('editNoteRow').value, note = document.getElementById('editNoteInput').value;
-        await fetch(GOOGLE_SCRIPT_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ method: "UPDATE", row: parseInt(row), note: note }) });
-        document.getElementById('noteModal').style.display = 'none'; prepareInventoryList();
+        const row = parseInt(document.getElementById('editNoteRow').value, 10);
+        const note = document.getElementById('editNoteInput').value;
+        const originalItem = rawStockData.find(item => Number(item.row) === row) ||
+            tempPickList.find(item => Number(item.row) === row);
+        const originalNote = originalItem ? String(originalItem.note || "") : "";
+
+        document.getElementById('noteModal').style.display = 'none';
+        applyNoteLocally(row, note);
+
+        try {
+            await postToGoogle({ method: "UPDATE", row, note });
+        } catch (err) {
+            applyNoteLocally(row, originalNote);
+            alert("備註同步失敗，已恢復原內容，請再試一次。");
+        }
     }
 
     async function updateRow(row, key, val) {
-    return fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors", // 配合 Google Apps Script 的特殊限制
-        body: JSON.stringify({
-            method: "UPDATE",
-            row: parseInt(row),
-            [key]: val
-        })
+    return postToGoogle({
+        method: "UPDATE",
+        row: parseInt(row),
+        [key]: val
     });
 }
-    async function deleteRow(row) { if(confirm("確定刪除？")) { await fetch(GOOGLE_SCRIPT_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ method: "DELETE", row: row }) }); prepareInventoryList(); } }
+    async function deleteRow(row) { if(confirm("確定刪除？")) { await postToGoogle({ method: "DELETE", row: row }); prepareInventoryList(); } }
 
     document.getElementById('cameraInput').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
 
-    // 顯示讀取中提示（如果有預覽圖區塊）
+    setUploadState("正在處理照片...");
     const previewImg = document.getElementById('preview');
     if (previewImg) previewImg.style.opacity = '0.5';
 
@@ -708,28 +925,39 @@
                 previewImg.style.display = 'block';
                 previewImg.style.opacity = '1';
             }
-            console.log("✅ 圖片壓縮完成，長度：", compressedImageData.length);
+            setUploadState("照片已準備，確認入庫後會上傳至 Drive。");
+        };
+        img.onerror = function() {
+            setUploadState("照片無法讀取，請重新選擇。", "error");
         };
         img.src = event.target.result;
+    };
+    reader.onerror = function() {
+        setUploadState("照片無法讀取，請重新選擇。", "error");
     };
     reader.readAsDataURL(file);
 });
 
     async function addToInventory() {
-    const comm = document.getElementById('inCommName').value; 
+    const comm = document.getElementById('inCommName').value.trim(); 
     if(!comm) return alert("❌ 請填寫【社群 ID】，此為必填欄位！");
+    const qty = Number(document.getElementById('inQty').value);
+    const price = Number(document.getElementById('inPrice').value);
+    if (!Number.isFinite(qty) || qty <= 0) return alert("數量必須大於 0。");
+    if (!Number.isFinite(price) || price < 0) return alert("金額不能小於 0。");
 
     const btn = document.getElementById('inBtn'); 
     btn.disabled = true; 
-    btn.innerText = "同步中...";
+    btn.innerText = compressedImageData ? "上傳中..." : "同步中...";
+    setUploadState(compressedImageData ? "正在上傳照片至 Drive..." : "正在新增庫存...");
 
     try {
         const payload = {
             method: "ADD",
             lineName: document.getElementById('inLineName').value || "",
             communityName: comm,
-            qty: Number(document.getElementById('inQty').value) || 0,
-            price: document.getElementById('inPrice').value || 0,
+            qty,
+            price,
             partner: document.getElementById('inPartner').value || "",
             note: document.getElementById('inNote').value || "",
             // --- 修改這裡：從 HTML 選單抓取狀態 ---
@@ -738,18 +966,31 @@
             image: typeof compressedImageData !== 'undefined' ? compressedImageData : ""
         };
 
-        await fetch(GOOGLE_SCRIPT_URL, { 
-            method: "POST", 
-            mode: "no-cors", 
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify(payload) 
-        });
+        const result = await postToGoogle(payload);
 
-        alert("✅ 入庫成功！");
-        location.reload(); 
+        if (result.verified && result.imageUrl) {
+            setUploadState("圖片已存到 Drive，入庫完成。", "success");
+        } else if (result.verified) {
+            setUploadState("入庫完成。", "success");
+        } else {
+            setUploadState("資料已送出，請到記錄頁確認寫入結果。");
+        }
+        if (result.verified) {
+            document.getElementById('inCommName').value = "";
+            document.getElementById('inLineName').value = "";
+            document.getElementById('inQty').value = 1;
+            document.getElementById('inPrice').value = "";
+            document.getElementById('inNote').value = "";
+            document.getElementById('cameraInput').value = "";
+            compressedImageData = "";
+            const preview = document.getElementById('preview');
+            if (preview) preview.style.display = "none";
+        }
+        btn.disabled = false;
+        btn.innerText = "確認同步入庫";
     } catch (err) {
         console.error("入庫出錯:", err);
-        alert("❌ 入庫失敗");
+        setUploadState(err.message || "入庫失敗，請重試。", "error");
         btn.disabled = false;
         btn.innerText = "重新同步";
     }
@@ -791,7 +1032,7 @@
         }
         
         renderSummary(); // 更新下方清單與總金額
-        filterPick();    // 刷新上方列表顯示「已選」
+        renderPickList(rawStockData);    // 刷新上方列表顯示「已選」
     } else {
         alert("沒有可加入的商品（可能已在清單中或庫存為 0）");
     }
