@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
@@ -69,6 +69,10 @@
         .upload-state.visible { display: block; }
         .upload-state.success { background: #e9f8ee; color: #14753b; }
         .upload-state.error { background: #fff0f0; color: #b42318; }
+        .app-toast { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%) translateY(16px); z-index: 6000; background: rgba(20, 32, 46, .94); color: white; padding: 10px 14px; border-radius: 8px; font-size: 14px; opacity: 0; pointer-events: none; transition: .25s ease; max-width: calc(100% - 40px); text-align: center; }
+        .app-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .app-toast.success { background: rgba(22, 101, 52, .95); }
+        .app-toast.error { background: rgba(180, 35, 24, .95); }
         .pick-confirm-btn { background:#15803d; color:white; height:46px; margin-top:12px; }
         .pick-confirm-btn:disabled { background:#cbd5e1; color:#64748b; cursor:not-allowed; }
 
@@ -113,6 +117,7 @@
     </style>
 </head>
 <body>
+<div id="appToast" class="app-toast" role="status" aria-live="polite"></div>
 
 <div id="addPage" class="page active-page">
     <div class="card">
@@ -168,7 +173,7 @@
         </div>
 
         <div style="padding: 15px;">
-            <button id="syncListBtn" onclick="prepareInventoryList()" style="background:#f8f9fa; color:#007bff; border:1px solid #007bff; font-size:14px; height:40px; margin-bottom: 12px; border-radius: 10px;">🔄 點此同步最新雲端庫存</button>
+            <button id="syncListBtn" onclick="prepareInventoryList(true)" style="background:#f8f9fa; color:#007bff; border:1px solid #007bff; font-size:14px; height:40px; margin-bottom: 12px; border-radius: 10px;">🔄 點此同步最新雲端庫存</button>
             <input type="text" id="filterID" placeholder="🔍 搜尋 ID 或備註內容" oninput="combinedFilter()" style="margin-bottom: 8px;">
             <div style="display:flex; gap:8px;">
                 <select id="filterPartner" onchange="combinedFilter()" style="flex: 1;"></select>
@@ -194,6 +199,8 @@
         <button id="pickSyncBtn" onclick="preparePickList()" style="background:#2ecc71; color:white; font-size:14px; height:45px; margin-top: 10px; border-radius: 12px;">🔄 刷新同步雲端庫存</button>
     </div>
 
+    <div id="pickListContainer"></div>
+
     <div class="card" style="border-top: 5px solid #27ae60;">
         <h3 style="margin-top:0; display: flex; justify-content: space-between; align-items: center;">
             📋 已選明細
@@ -209,8 +216,6 @@
         </div>
         <button id="createPickSheetBtn" class="pick-confirm-btn" onclick="confirmPickAndShowSheet()" disabled>結案並產生明細表</button>
     </div>
-
-    <div id="pickListContainer"></div>
 </div>
 
 <div id="printOverlay">
@@ -269,19 +274,22 @@
     <div class="nav-item" onclick="showPage('pickPage', this); preparePickList();"><span>🛒</span><span>檢貨</span></div>
 </div>
 <script>
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzQDuxZ7VyMl9kQvZOlBGSx1qLYCG_OS70fyzJgzZaOCbDKA4tmTNmKzqmQBboa1rH23A/exec"; 
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwUqPm2eDBBZt2gAQ1PGjXc8wfBMxVpziMUNj6l1DwFUX_vVgv-RoRQm-TsjIl36GCroQ/exec"; 
     let rawStockData = [];
     let tempPickList = [];
     let compressedImageData = "";
     let inventoryPage = 1;
     let inventoryHasMore = false;
     let inventoryTotal = 0;
+    let lastInventoryQueryKey = "";
+    let toastTimer = null;
     let pickPage = 1;
     let pickHasMore = false;
     const PAGE_SIZE = 30;
     
     // --- 效能優化變數 ---
     let lastFetchTime = 0;
+    let lastInventoryFetchTime = 0;
     const CACHE_DURATION = 20000; 
     
     const partners = ["萌寶目錄預購","東京速換金","妮小舖","NAZI夏批發","香港中國同行批發","橙日(日本奇異果)","ココ購","日和優選","東京買買","自行購買","尚未安排"];
@@ -303,6 +311,17 @@
 
     function noteArg(value) {
         return encodeURIComponent(String(value ?? ''));
+    }
+
+    function showToast(message, state = '') {
+        const toast = document.getElementById('appToast');
+        if (!toast) return;
+        clearTimeout(toastTimer);
+        toast.textContent = message;
+        toast.className = `app-toast visible ${state}`.trim();
+        toastTimer = setTimeout(() => {
+            toast.className = 'app-toast';
+        }, 1800);
     }
 
     function normalizeApiItems(data) {
@@ -451,8 +470,24 @@
         };
     }
 
-    async function prepareInventoryList() {
+    function inventoryQueryKey(page = 1) {
+        const filters = getInventoryFilters();
+        return JSON.stringify({
+            page,
+            pageSize: PAGE_SIZE,
+            keyword: filters.keyword,
+            partner: filters.partner,
+            status: filters.status
+        });
+    }
+
+    async function prepareInventoryList(force = false) {
         const btn = document.getElementById('syncListBtn');
+        const firstPageKey = inventoryQueryKey(1);
+        if (!force && rawStockData.length && firstPageKey === lastInventoryQueryKey && (Date.now() - lastInventoryFetchTime < CACHE_DURATION)) {
+            renderList(rawStockData, { total: inventoryTotal });
+            return;
+        }
         if(btn) { btn.disabled = true; btn.innerText = "🔄 正在讀取第 1 頁..."; }
         try {
             inventoryPage = 1;
@@ -477,6 +512,8 @@
         const result = normalizeApiItems(data);
         inventoryHasMore = result.hasMore;
         inventoryTotal = result.total;
+        lastInventoryQueryKey = inventoryQueryKey(inventoryPage);
+        lastInventoryFetchTime = Date.now();
         rawStockData = append ? rawStockData.concat(result.items) : result.items;
         renderList(rawStockData, { total: result.total });
     }
@@ -875,22 +912,29 @@
 
         document.getElementById('noteModal').style.display = 'none';
         applyNoteLocally(row, note);
+        showToast("備註已更新，背景同步中...");
 
         try {
             await postToGoogle({ method: "UPDATE", row, note });
+            showToast("備註已同步", "success");
         } catch (err) {
             applyNoteLocally(row, originalNote);
-            alert("備註同步失敗，已恢復原內容，請再試一次。");
+            showToast("備註同步失敗，已恢復原內容", "error");
         }
     }
 
-    async function updateRow(row, key, val) {
-    return postToGoogle({
-        method: "UPDATE",
-        row: parseInt(row),
-        [key]: val
-    });
-}
+    function updateRow(row, key, val) {
+        showToast("正在同步變更...");
+        return postToGoogle({
+            method: "UPDATE",
+            row: parseInt(row),
+            [key]: val
+        }).then(() => {
+            showToast("變更已同步", "success");
+        }).catch(() => {
+            showToast("同步失敗，請重新整理確認", "error");
+        });
+    }
     async function deleteRow(row) { if(confirm("確定刪除？")) { await postToGoogle({ method: "DELETE", row: row }); prepareInventoryList(); } }
 
     document.getElementById('cameraInput').addEventListener('change', function(e) {
