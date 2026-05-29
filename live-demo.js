@@ -1,7 +1,9 @@
 ﻿const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwUqPm2eDBBZt2gAQ1PGjXc8wfBMxVpziMUNj6l1DwFUX_vVgv-RoRQm-TsjIl36GCroQ/exec";
-const partners = ["萌寶目錄預購","東京速換金","妮小舖","NAZI夏批發","香港中國同行批發","橙日(日本奇異果)","ココ購","日和優選","東京買買","自行購買","尚未安排"];
-const statusOpts = ["📝 已登記","🛒 已採買","❌ 尚未買","⚠️ 缺貨","📦 已到貨","✅ 出貨完成"];
+const DEFAULT_PARTNERS = ["萌寶目錄預購","東京速換金","妮小舖","NAZI夏批發","香港中國同行批發","橙日(日本奇異果)","ココ購","日和優選","東京買買","自行購買","尚未安排"];
+const DEFAULT_STATUS_OPTS = ["📝 已登記","🛒 已採買","❌ 尚未買","⚠️ 缺貨","📦 已到貨","✅ 出貨完成"];
 const PAGE_SIZE = 30;
+let partners = [...DEFAULT_PARTNERS];
+let statusOpts = [...DEFAULT_STATUS_OPTS];
 let rawStockData = [];
 let tempPickList = [];
 let inventoryPage = 1;
@@ -23,12 +25,7 @@ function showToast(message, state = '') { clearTimeout(toastTimer); const t = $(
 function debounce(fn, delay) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); }; }
 
 function init() {
-  const pOptions = partners.map(p => `<option value="${escapeAttr(p)}">${escapeHTML(p)}</option>`).join('');
-  const sOptions = statusOpts.map(s => `<option value="${escapeAttr(s)}">${escapeHTML(s)}</option>`).join('');
-  if ($('inPartner')) $('inPartner').innerHTML = pOptions;
-  if ($('inStatus')) $('inStatus').innerHTML = sOptions;
-  if ($('filterPartner')) $('filterPartner').innerHTML = '<option value="">全部代購</option>' + pOptions;
-  if ($('filterStatus')) $('filterStatus').innerHTML = '<option value="">全部狀態</option>' + sOptions;
+  renderOptionSelects();
   document.querySelectorAll('[data-view]').forEach(btn => btn.addEventListener('click', () => showView(btn.dataset.view, btn)));
   $('filterID')?.addEventListener('input', debounce(() => prepareInventoryList(true), 300));
   $('filterPartner')?.addEventListener('change', () => prepareInventoryList(true));
@@ -48,7 +45,53 @@ function init() {
     if ($('inLineName').value !== lastAutoLineId) lastAutoLineId = "";
   });
   $('cameraInput')?.addEventListener('change', handlePhotoInput);
+  loadSettingsOptions();
   prepareInventoryList(true);
+}
+
+async function loadSettingsOptions() {
+  try {
+    const data = await apiGet({ mode: 'settings', _: Date.now() });
+    if (data.ok === false) throw new Error(data.message || '設定讀取失敗');
+    partners = normalizeOptions(data.partners, DEFAULT_PARTNERS);
+    statusOpts = normalizeOptions(data.statuses, DEFAULT_STATUS_OPTS);
+    renderOptionSelects();
+    if (rawStockData.length) renderRecords();
+  } catch (err) {
+    console.warn('設定選項讀取失敗，使用內建預設值', err);
+  }
+}
+function normalizeOptions(options, fallback) {
+  const seen = new Set();
+  const cleaned = (Array.isArray(options) ? options : [])
+    .map(item => String(item || '').trim())
+    .filter(item => {
+      const key = normalizeLookup(item);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return cleaned.length ? cleaned : [...fallback];
+}
+function renderOptionSelects() {
+  renderSelectOptions('inPartner', partners);
+  renderSelectOptions('inStatus', statusOpts);
+  renderSelectOptions('filterPartner', partners, '全部代購');
+  renderSelectOptions('filterStatus', statusOpts, '全部狀態');
+}
+function renderSelectOptions(id, values, blankText = '') {
+  const el = $(id);
+  if (!el) return;
+  const current = el.value;
+  const optionValues = optionListWithCurrent(values, current);
+  const blank = blankText ? `<option value="">${escapeHTML(blankText)}</option>` : '';
+  el.innerHTML = blank + optionValues.map(value => `<option value="${escapeAttr(value)}">${escapeHTML(value)}</option>`).join('');
+  if (current && optionValues.includes(current)) el.value = current;
+}
+function optionListWithCurrent(values, current) {
+  const list = [...values];
+  if (current && !list.includes(current)) list.unshift(current);
+  return list;
 }
 
 function showView(viewId, btn) {
@@ -280,7 +323,7 @@ function selectsMarkup(item) { return selectMarkup('partner', item) + selectMark
 function selectMarkup(key, item) {
   const arr = key === 'partner' ? partners : statusOpts;
   const current = item[key] || '';
-  return `<select onchange="updateRow(${item.row}, '${key}', this.value)">${arr.map(v => `<option value="${escapeAttr(v)}" ${current === v ? 'selected' : ''}>${escapeHTML(v)}</option>`).join('')}</select>`;
+  return `<select onchange="updateRow(${item.row}, '${key}', this.value)">${optionListWithCurrent(arr, current).map(v => `<option value="${escapeAttr(v)}" ${current === v ? 'selected' : ''}>${escapeHTML(v)}</option>`).join('')}</select>`;
 }
 function getPickedQty(row) {
   const picked = tempPickList.find(p => Number(p.row) === Number(row));
@@ -316,15 +359,29 @@ function addPick(row) {
 }
 function renderSummary() {
   let totalQty = 0, total = 0;
-  const html = tempPickList.map((item, idx) => {
+  const groups = new Map();
+  tempPickList.forEach((item, idx) => {
     const qty = Number(item.pickQty || 0);
     const price = Number(item.price || 0);
     totalQty += qty;
     total += qty * price;
-    const image = escapeAttr(item.image || item.thumbnailUrl || 'https://via.placeholder.com/80?text=無圖');
-    const cls = theme() === 'table' ? 'pick-card' : 'pick-row';
-    const note = item.note ? `<span title="${escapeAttr(item.note)}">備註：${escapeHTML(item.note)}</span>` : '<span>無備註</span>';
-    return `<div class="${cls}"><img src="${image}" onclick="viewImage(this.src)" onerror="this.src='https://via.placeholder.com/80?text=無圖'"><div><b>${escapeHTML(item.communityName || item.lineName || '無')}</b><span>${qty} 件 · ${money(qty * price)}</span>${note}</div><button class="remove" onclick="removeItem(${idx})">×</button></div>`;
+    const key = normalizeLookup(item.communityName || item.lineName || '未分類');
+    if (!groups.has(key)) groups.set(key, { label: item.communityName || item.lineName || '未分類', qty: 0, total: 0, items: [] });
+    const group = groups.get(key);
+    group.qty += qty;
+    group.total += qty * price;
+    group.items.push({ item, idx });
+  });
+  const html = Array.from(groups.values()).map(group => {
+    const rows = group.items.map(({ item, idx }) => {
+      const qty = Number(item.pickQty || 0);
+      const price = Number(item.price || 0);
+      const image = escapeAttr(item.image || item.thumbnailUrl || 'https://via.placeholder.com/80?text=無圖');
+      const cls = theme() === 'table' ? 'pick-card' : 'pick-row';
+      const note = item.note ? `<span title="${escapeAttr(item.note)}">備註：${escapeHTML(item.note)}</span>` : '<span>無備註</span>';
+      return `<div class="${cls}"><img src="${image}" onclick="viewImage(this.src)" onerror="this.src='https://via.placeholder.com/80?text=無圖'"><div><b>${escapeHTML(item.communityName || item.lineName || '無')}</b><span>${qty} 件 · ${money(qty * price)}</span>${note}</div><button class="remove" onclick="removeItem(${idx})">×</button></div>`;
+    }).join('');
+    return `<section class="pick-group"><div class="pick-group-head"><b>${escapeHTML(group.label)}</b><span>${group.qty} 件 · ${money(group.total)}</span></div>${rows}</section>`;
   }).join('');
   $('pickSummary').innerHTML = html || '<div class="empty">尚未選取商品</div>';
   setText('pickStatCount', `${totalQty} 件`);
