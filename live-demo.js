@@ -9,6 +9,9 @@ let inventoryTotal = 0;
 let inventoryHasMore = false;
 let compressedImageData = "";
 let toastTimer = null;
+let communitySuggestions = [];
+let communityQueryCache = new Set();
+let lastAutoLineId = "";
 
 const $ = id => document.getElementById(id);
 const theme = () => document.body.dataset.theme || "desk";
@@ -33,6 +36,16 @@ function init() {
   $('sortMode')?.addEventListener('change', () => {
     if (getSortMode() === 'price_desc') renderRecords();
     else prepareInventoryList(true);
+  });
+  const debouncedCommunityLookup = debounce(fetchCommunitySuggestions, 120);
+  $('inCommName')?.addEventListener('change', autoFillLineId);
+  $('inCommName')?.addEventListener('blur', autoFillLineId);
+  $('inCommName')?.addEventListener('input', () => {
+    handleCommunityTyping();
+    debouncedCommunityLookup();
+  });
+  $('inLineName')?.addEventListener('input', () => {
+    if ($('inLineName').value !== lastAutoLineId) lastAutoLineId = "";
   });
   $('cameraInput')?.addEventListener('change', handlePhotoInput);
   prepareInventoryList(true);
@@ -79,6 +92,7 @@ async function prepareInventoryList(reset = false) {
     rawStockData = Array.isArray(data.items) ? data.items : [];
     inventoryTotal = Number(data.total || rawStockData.length);
     inventoryHasMore = Boolean(data.hasMore);
+    updateCommunitySuggestions(rawStockData);
     renderRecords();
     setText('syncState', '雲端已同步');
     setText('syncTime', new Date().toLocaleString('zh-TW'));
@@ -86,6 +100,107 @@ async function prepareInventoryList(reset = false) {
     if ($('inventoryContainer')) $('inventoryContainer').innerHTML = emptyMarkup('讀取失敗，請稍後再試。');
     showToast(err.message || '讀取失敗', 'error');
   }
+}
+function handleCommunityTyping() {
+  const keyword = $('inCommName')?.value.trim() || '';
+  const lineInput = $('inLineName');
+  if (lineInput && lastAutoLineId && lineInput.value === lastAutoLineId) {
+    lineInput.value = "";
+    lastAutoLineId = "";
+  }
+  renderCommunitySuggestions(keyword);
+  fillLineFromSuggestions(true);
+}
+async function fetchCommunitySuggestions() {
+  const keyword = $('inCommName')?.value.trim() || '';
+  if (keyword.length < 1) return;
+  const cacheKey = normalizeLookup(keyword);
+  if (communityQueryCache.has(cacheKey)) return;
+  communityQueryCache.add(cacheKey);
+
+  try {
+    const data = await apiGet({ mode: 'list', page: 1, pageSize: 30, keyword, sort: 'updated' });
+    updateCommunitySuggestions(Array.isArray(data.items) ? data.items : []);
+    renderCommunitySuggestions(keyword);
+    fillLineFromSuggestions(true);
+  } catch (err) {
+    communityQueryCache.delete(cacheKey);
+    console.warn('社群 ID 選單查詢失敗', err);
+  }
+}
+function updateCommunitySuggestions(items) {
+  const seen = new Set(communitySuggestions.map(item => normalizeLookup(item.communityName)));
+  items.forEach(item => {
+    const communityName = String(item.communityName || '').trim();
+    if (!communityName) return;
+    const key = normalizeLookup(communityName);
+    if (seen.has(key)) return;
+    seen.add(key);
+    communitySuggestions.push({
+      communityName,
+      lineName: String(item.lineName || '').trim()
+    });
+  });
+  renderCommunitySuggestions($('inCommName')?.value.trim() || '');
+}
+function renderCommunitySuggestions(keyword = '') {
+  const list = $('commSuggestions');
+  if (!list) return;
+  const query = normalizeLookup(keyword);
+  const options = communitySuggestions
+    .filter(item => !query || normalizeLookup(item.communityName).includes(query))
+    .slice(0, 40)
+    .map(item => `<option value="${escapeAttr(item.communityName)}"${item.lineName ? ` label="LINE: ${escapeAttr(item.lineName)}"` : ''}></option>`)
+    .join('');
+  list.innerHTML = options;
+}
+async function autoFillLineId() {
+  const comm = $('inCommName')?.value.trim();
+  const lineInput = $('inLineName');
+  if (!comm || !lineInput) return;
+  if (lineInput.value.trim() && lineInput.value !== lastAutoLineId) return;
+
+  if (fillLineFromSuggestions(false)) return;
+
+  const localMatch = findLineIdByCommunity(rawStockData, comm);
+  if (localMatch) {
+    lineInput.value = localMatch;
+    lastAutoLineId = localMatch;
+    showToast('已自動帶入 LINE ID', 'success');
+    return;
+  }
+
+  try {
+    const data = await apiGet({ mode: 'list', page: 1, pageSize: 20, keyword: comm, sort: 'updated' });
+    const match = findLineIdByCommunity(Array.isArray(data.items) ? data.items : [], comm);
+    if (match && (!lineInput.value.trim() || lineInput.value === lastAutoLineId)) {
+      lineInput.value = match;
+      lastAutoLineId = match;
+      showToast('已從歷史資料帶入 LINE ID', 'success');
+    }
+  } catch (err) {
+    console.warn('自動帶入 LINE ID 失敗', err);
+  }
+}
+function fillLineFromSuggestions(silent = false) {
+  const comm = $('inCommName')?.value.trim();
+  const lineInput = $('inLineName');
+  if (!comm || !lineInput) return false;
+  if (lineInput.value.trim() && lineInput.value !== lastAutoLineId) return false;
+  const match = findLineIdByCommunity(communitySuggestions, comm);
+  if (!match) return false;
+  lineInput.value = match;
+  lastAutoLineId = match;
+  if (!silent) showToast('已自動帶入 LINE ID', 'success');
+  return true;
+}
+function findLineIdByCommunity(items, communityName) {
+  const target = normalizeLookup(communityName);
+  const match = items.find(item => normalizeLookup(item.communityName) === target && String(item.lineName || '').trim());
+  return match ? String(match.lineName || '').trim() : '';
+}
+function normalizeLookup(value) {
+  return String(value || '').trim().toLowerCase();
 }
 async function loadMoreInventory() {
   if (!inventoryHasMore) return;
@@ -95,6 +210,7 @@ async function loadMoreInventory() {
     rawStockData = rawStockData.concat(Array.isArray(data.items) ? data.items : []);
     inventoryTotal = Number(data.total || rawStockData.length);
     inventoryHasMore = Boolean(data.hasMore);
+    updateCommunitySuggestions(Array.isArray(data.items) ? data.items : []);
     renderRecords();
   } catch (err) { showToast('載入更多失敗', 'error'); }
 }
@@ -142,7 +258,7 @@ function renderDeskRecord(item, qty, price) {
   const statusChipClass = remainingQty <= 0 ? 'full' : statusClass(item.status);
   return `<article class="record${fullClass}">
     <div class="record-top"><img src="${image}" loading="lazy" onclick="viewImage(this.src)" onerror="this.src='https://via.placeholder.com/100?text=無圖片'"><div><h3>${escapeHTML(item.communityName || '無')}</h3><div class="meta">LINE: ${escapeHTML(item.lineName || '無')} · ${escapeHTML(item.partner || '尚未安排')}</div><span class="note" onclick="openNoteModal(${item.row}, decodeURIComponent('${noteArg(item.note || '')}'))">${note}</span><div class="record-controls">${selectsMarkup(item)}</div></div></div>
-    <div class="record-bottom"><span class="money">${money(price * qty)} · 剩 ${remainingQty}/${qty} 件</span><span class="chip ${statusChipClass}">${statusText}</span><span class="mini-actions"><input class="qty-input" id="pQty_${item.row}" type="number" min="1" max="${remainingQty}" value="${remainingQty > 0 ? 1 : 0}" ${pickDisabled}><button class="add-pick" onclick="addPick(${item.row})" ${pickDisabled}>${pickLabel}</button><button class="icon" onclick="triggerEditPhoto(${item.row})">📷</button><button class="icon danger" onclick="deleteRow(${item.row})">🗑</button></span></div>
+    <div class="record-bottom"><span class="stock-info"><span class="amount">${money(price * qty)}</span><span class="remain">剩 ${remainingQty}/${qty} 件</span></span><span class="chip ${statusChipClass}">${statusText}</span><span class="mini-actions"><input class="qty-input" id="pQty_${item.row}" type="number" min="1" max="${remainingQty}" value="${remainingQty}" ${pickDisabled}><button class="add-pick" onclick="addPick(${item.row})" ${pickDisabled}>${pickLabel}</button><button class="icon" onclick="triggerEditPhoto(${item.row})">📷</button><button class="icon danger" onclick="deleteRow(${item.row})">🗑</button></span></div>
   </article>`;
 }
 function renderTableRecord(item, qty, price) {
@@ -157,7 +273,7 @@ function renderTableRecord(item, qty, price) {
     <div>${selectMarkup('partner', item)}</div>
     <span class="chip ${statusClass(item.status)}">${escapeHTML(item.status || '未設定')}</span>
     <div><span class="money">${money(price * qty)}</span><br><span class="qty">剩 ${remainingQty}/${qty} 件</span></div>
-    <div class="actions"><input class="qty-input" id="pQty_${item.row}" type="number" min="1" max="${remainingQty}" value="${remainingQty > 0 ? 1 : 0}" ${pickDisabled}><button class="icon" onclick="addPick(${item.row})" ${pickDisabled}>＋</button><button class="icon" onclick="triggerEditPhoto(${item.row})">📷</button><button class="icon danger" onclick="deleteRow(${item.row})">🗑</button></div>
+    <div class="actions"><input class="qty-input" id="pQty_${item.row}" type="number" min="1" max="${remainingQty}" value="${remainingQty}" ${pickDisabled}><button class="icon" onclick="addPick(${item.row})" ${pickDisabled}>＋</button><button class="icon" onclick="triggerEditPhoto(${item.row})">📷</button><button class="icon danger" onclick="deleteRow(${item.row})">🗑</button></div>
   </div>`;
 }
 function selectsMarkup(item) { return selectMarkup('partner', item) + selectMarkup('status', item); }
