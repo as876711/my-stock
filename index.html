@@ -1,1090 +1,357 @@
-﻿<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智慧庫存 V18.5 - 介面優化版</title>
-    <style>
-        body { font-family: -apple-system, "Helvetica Neue", sans-serif; margin: 0; padding: 0; background: #f0f2f5; padding-bottom: 100px; color: #333; }
-        .page { display: none; padding: 15px; max-width: 600px; margin: auto; }
-        .active-page { display: block; }
-        .nav-bar { position: fixed; bottom: 0; width: 100%; height: 75px; background: white; display: flex; box-shadow: 0 -3px 15px rgba(0,0,0,0.1); z-index: 1000; }
-        .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 14px; color: #888; cursor: pointer; transition: 0.3s; }
-        .nav-item.active { color: #007bff; font-weight: bold; }
-        .card { background: white; padding: 15px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 15px; }
-        input, select, button, textarea { width: 100%; padding: 12px; margin: 5px 0; border-radius: 10px; border: 1px solid #ddd; box-sizing: border-box; font-size: 16px; outline: none; transition: 0.3s; }
-        button { cursor: pointer; border: none; font-weight: bold; }
-        button:active { transform: scale(0.98); }
-        .stats-bar { 
-    background: #007bff; 
-    color: white; 
-    padding: 10px 15px; /* 稍微縮減上下間距 */
-    border-radius: 12px; 
-    margin-bottom: 15px; 
-    font-weight: bold; 
-    display: flex; 
-    justify-content: space-around; 
-    align-items: center; /* 垂直居中 */
-    font-size: 16px; 
-    line-height: 1.2; /* 讓兩行文字間距緊湊一點 */
-}
-
-        /* 庫存卡片樣式 */
-        .inventory-item { 
-            background: white; margin-bottom: 15px; padding: 15px; border-radius: 20px; 
-            display: flex; align-items: flex-start; box-shadow: 0 4px 12px rgba(0,0,0,0.08); 
-            border-left: 8px solid #007bff; position: relative; min-height: 110px;
-            transition: all 0.3s ease;
-        }
-        .inventory-item img { width: 100px; height: 100px; border-radius: 12px; object-fit: cover; margin-right: 15px; border: 1px solid #f0f0f0; flex-shrink: 0; }
-        .item-info { flex: 1; display: flex; flex-direction: column; min-height: 100px; justify-content: space-between; }
-        .id-text { color: #2c3e50; font-size: 14px; font-weight: bold; display: block; margin-bottom: 2px; }
-        .note-text { font-size: 12px; color: #000000; background: #f4f6f7; padding: 4px 10px; border-radius: 6px; display: inline-block; cursor: pointer; margin-bottom: 8px; line-height: 1.4; }
-        
-        .top-right-actions { 
-    position: absolute; 
-    top: 15px; 
-    right: 15px; 
-    display: flex; 
-    flex-direction: column; 
-    gap: 0.5px; /* 從 5px 改為 2px，縮小選單間距 */
-    align-items: flex-end; 
-}
-        .select-mini { 
-            width: auto; 
-            min-width: 110px; 
-            padding: 4px; 
-            font-size: 15px;
-            border-radius: 6px; 
-            border: 2px solid #888888; 
-            color: #000000 !important; 
-            background: #ffffff; 
-            font-weight: bold; 
-            cursor: pointer;
-            outline: none;
-            appearance: auto; 
-        }
-        .btn-del-red { background: #ff4d4d; color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; }
-        .upload-state { display: none; margin-top: 8px; padding: 9px 11px; border-radius: 8px; font-size: 13px; background: #eef6ff; color: #1456a0; }
-        .upload-state.visible { display: block; }
-        .upload-state.success { background: #e9f8ee; color: #14753b; }
-        .upload-state.error { background: #fff0f0; color: #b42318; }
-        .app-toast { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%) translateY(16px); z-index: 6000; background: rgba(20, 32, 46, .94); color: white; padding: 10px 14px; border-radius: 8px; font-size: 14px; opacity: 0; pointer-events: none; transition: .25s ease; max-width: calc(100% - 40px); text-align: center; }
-        .app-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
-        .app-toast.success { background: rgba(22, 101, 52, .95); }
-        .app-toast.error { background: rgba(180, 35, 24, .95); }
-        .pick-confirm-btn { background:#15803d; color:white; height:46px; margin-top:12px; }
-        .pick-confirm-btn:disabled { background:#cbd5e1; color:#64748b; cursor:not-allowed; }
-
-        #printOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 5000; overflow-y: auto; padding: 20px; }
-        .print-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        .print-table th, .print-table td { border: 1px solid #eee; padding: 12px; text-align: center; }
-        .print-table th { background: #f8f9fa; }
-        #noteModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; justify-content: center; align-items: center; }
-        
-        @media print {
-            .nav-bar, .no-print, .nav-item, #addPage, #listPage, #pickPage { display: none !important; }
-            #printOverlay { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: auto !important; display: block !important; overflow: visible !important; }
-            table { page-break-inside: auto; }
-            tr { page-break-inside: avoid; page-break-after: auto; }
-            thead { display: table-header-group; }
-            tfoot { display: table-footer-group; }
-            @page { margin: 1cm; }
-            body { -webkit-print-color-adjust: exact; }
-        }
-
-        #imageViewer {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.9);
-    z-index: 6000; /* 高於所有 UI */
-    justify-content: center;
-    align-items: center;
-    cursor: zoom-out;
-}
-
-#imageViewer img {
-    max-width: 95%;
-    max-height: 95%;
-    border-radius: 8px;
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
-    transition: transform 0.3s ease;
-}
-    </style>
-</head>
-<body>
-<div id="appToast" class="app-toast" role="status" aria-live="polite"></div>
-
-<div id="addPage" class="page active-page">
-    <div class="card">
-        <h2 style="margin:0 0 10px 0;">📥 拍照入庫</h2>
-        <input type="file" id="cameraInput" accept="image/*" capture="environment">
-        <img id="preview" style="width:100%; border-radius:10px; display:none; margin-top:10px;" onerror="this.src='https://via.placeholder.com/300?text=圖片載入失敗'">
-        <div id="imageUploadState" class="upload-state" aria-live="polite"></div>
-        
-        <input type="text" id="inCommName" list="commList" placeholder="💬 社群 ID(必填)">
-        <datalist id="commList"></datalist>
-        <input type="text" id="inLineName" list="lineList" placeholder="👤 LINE ID ">
-        <datalist id="lineList"></datalist>
-
-        <div style="display: flex; gap: 10px;">
-            <div style="flex: 1;">
-                <label style="font-size: 12px; color: #666; margin-left: 5px;">📦 數量</label>
-                <input type="number" id="inQty" value="1" style="margin-top: 2px;">
-            </div>
-            <div style="flex: 1;">
-                <label style="font-size: 12px; color: #666; margin-left: 5px;">💰 金額</label>
-                <input type="number" id="inPrice" placeholder="金額" style="margin-top: 2px;">
-            </div>
-        </div>
-
-        <div style="display: flex; gap: 10px; margin-top: 5px;">
-            <div style="flex: 1;">
-                <label style="font-size: 12px; color: #666; margin-left: 5px;">🏢 廠商</label>
-                <select id="inPartner" style="margin-top: 2px;"></select>
-            </div>
-            <div style="flex: 1;">
-                <label style="font-size: 12px; color: #666; margin-left: 5px;">🚩 狀態</label>
-                <select id="inStatus" style="margin-top: 2px;">
-                    <option value="📝 已登記" selected>📝 已登記</option>
-                    <option value="🛒 已採買">🛒 已採買</option>
-                    <option value="❌ 尚未買">❌ 尚未買</option>
-                    <option value="⚠️ 缺貨">⚠️ 缺貨</option>
-                    <option value="📦 已到貨">📦 已到貨</option>
-                    <option value="✅ 出貨完成">✅ 出貨完成</option>
-                </select>
-            </div>
-        </div>
-
-        <textarea id="inNote" placeholder="📝 備註 (規格、顏色...)" style="height:80px; margin-top: 10px;"></textarea>
-        <button id="inBtn" onclick="addToInventory()" style="background:#007bff; color:white; height:50px; margin-top:15px;">確認同步入庫</button>
-    </div>
-</div>
-
-<div id="listPage" class="page">
-    <div class="card" style="padding: 0; overflow: hidden; border-bottom: 2px solid #eee;">
-        <div class="stats-bar" style="border-radius: 0; margin: 0; background: #007bff; font-size: 15px; padding: 15px; display: flex; justify-content: space-around;">
-            <span id="statCash">💰 $0</span>
-            <span id="statQty">📦 0 件</span>
-        </div>
-
-        <div style="padding: 15px;">
-            <button id="syncListBtn" onclick="prepareInventoryList(true)" style="background:#f8f9fa; color:#007bff; border:1px solid #007bff; font-size:14px; height:40px; margin-bottom: 12px; border-radius: 10px;">🔄 點此同步最新雲端庫存</button>
-            <input type="text" id="filterID" placeholder="🔍 搜尋 ID 或備註內容" oninput="combinedFilter()" style="margin-bottom: 8px;">
-            <div style="display:flex; gap:8px;">
-                <select id="filterPartner" onchange="combinedFilter()" style="flex: 1;"></select>
-                <select id="filterStatus" onchange="combinedFilter()" style="flex: 1;"></select>
-            </div>
-        </div>
-    </div>
-    <div id="inventoryContainer">載入中...</div>
-</div>
-
-<div id="pickPage" class="page">
-    <div class="card" style="border-top: 5px solid #2ecc71;">
-        <h2 style="margin:0 0 10px 0;">🛒 檢貨系統</h2>
-        <input type="text" id="pickCollectorName" placeholder="👤 領取人名稱 (必填)">
-        <input type="text" id="pickSearchID" placeholder="🔍 搜尋 ID 或備註內容" oninput="filterPick()">
-        <button id="selectAllBtn" onclick="addAllFilteredToPick()" style="background:#2ecc71; color:white; font-size:14px; height:40px; margin-top: 10px; border-radius: 12px; width: 100%; font-weight: bold;">
-    ✅️全選目前篩選結果
-        </button>
-        <div style="display:flex; gap:5px; margin-top: 5px;">
-            <select id="pickFilterPartner" onchange="filterPick()" style="flex:1; border-color: #2ecc71; height: 45px;"></select>
-            <select id="pickFilterStatus" onchange="filterPick()" style="flex:1; border-color: #2ecc71; height: 45px;"></select>
-        </div>
-        <button id="pickSyncBtn" onclick="preparePickList()" style="background:#2ecc71; color:white; font-size:14px; height:45px; margin-top: 10px; border-radius: 12px;">🔄 刷新同步雲端庫存</button>
-    </div>
-
-    <div id="pickListContainer"></div>
-
-    <div class="card" style="border-top: 5px solid #27ae60;">
-        <h3 style="margin-top:0; display: flex; justify-content: space-between; align-items: center;">
-            📋 已選明細
-            <span id="pickStatCount" style="font-size: 14px; background: #27ae60; color: white; padding: 2px 8px; border-radius: 20px;">0 件</span>
-        </h3>
-        <div id="pickSummary" style="background: #f1f8e9; padding: 12px; border-radius: 8px; border: 1px dashed #2ecc71; font-size: 14px; min-height: 40px; color: #555;">
-            尚未選取商品
-        </div>
-        
-        <div id="pickTotalDisplay" style="margin-top: 15px; padding: 12px; background: #fff; border-radius: 8px; border: 2px solid #27ae60; text-align: center; display: none;">
-            <div style="font-size: 14px; color: #666;">本次預計收款總計</div>
-            <div id="pickTotalAmount" style="font-size: 24px; font-weight: bold; color: #e74c3c;">$0</div>
-        </div>
-        <button id="createPickSheetBtn" class="pick-confirm-btn" onclick="confirmPickAndShowSheet()" disabled>結案並產生明細表</button>
-    </div>
-</div>
-
-<div id="printOverlay">
-    <div style="max-width: 800px; margin: auto; background: white; padding: 10px;">
-        <h1 style="text-align:center; margin-bottom: 20px;">📦 商品明細表</h1>
-        <table style="width: 92%; margin: 0 auto 20px auto; border-bottom: 2px solid #333;">
-            <tr>
-                <td style="text-align: left; padding: 10px; font-size: 16px;"><b>👤 領取人：</b><span id="resName"></span></td>
-                <td style="text-align: right; padding: 10px; font-size: 16px;"><b>📅 時間：</b><span id="resTime"></span></td>
-            </tr>
-        </table>
-        <table class="print-table" style="width: 100%; border-collapse: collapse; table-layout: fixed;">
-            <thead>
-                <tr style="background: #f8f9fa; border-bottom: 1px solid #000;">
-                    <th style="width: 170px; padding: 10px;">圖片</th>
-                    <th style="padding: 10px;">詳細資訊</th>
-                    <th style="width: 60px; padding: 10px;">數量</th>
-                    <th style="width: 100px; padding: 10px;">小計</th>
-                </tr>
-            </thead>
-            <tbody id="resTableBody"></tbody>
-        </table>
-        <div style="width: 100%; text-align: right; padding: 20px 0; border-top: 2px solid #333; margin-top: 10px;">
-            <span style="font-size: 20px; font-weight: bold;">總計金額：</span>
-            <span id="resTotal" style="font-size: 24px; color: red; font-weight: bold; margin-right: 20px;">$0</span>
-        </div>
-        <div class="no-print" style="margin-top: 30px; display: flex; flex-direction: column; gap: 10px;">
-             <button id="finalConfirmBtn" onclick="finalCommitToGoogle()" style="background:#27ae60; color:white; padding:18px; border-radius:10px; font-size:18px;">🚀 確認出貨 (正式扣庫存)</button>
-             <div style="display:flex; gap:10px;">
-                <button onclick="window.print()" style="background:#007bff; color:white; padding:15px; flex:1; border-radius:10px;">🖨️ 列印/轉存PDF</button>
-                <button onclick="document.getElementById('printOverlay').style.display='none'" style="background:#6c757d; color:white; padding:15px; flex:1; border-radius:10px;">🔙 返回修改</button>
-             </div>
-        </div>
-    </div>
-</div>
-
-<div id="noteModal">
-    <div style="background:white; padding:20px; border-radius:20px; width:85%; max-width:350px;">
-        <h3 style="margin-top:0;">📝 修改備註</h3>
-        <textarea id="editNoteInput" style="height:120px;"></textarea>
-        <input type="hidden" id="editNoteRow">
-        <div style="display:flex; gap:10px; margin-top:15px;">
-            <button onclick="document.getElementById('noteModal').style.display='none'" style="background:#eee; flex:1; border-radius:10px;">取消</button>
-            <button onclick="saveNote()" style="background:#007bff; color:white; flex:1; border-radius:10px;">儲存</button>
-        </div>
-    </div>
-</div>
-
-<div id="imageViewer" onclick="this.style.display='none'">
-    <img id="fullImage" src="" alt="預覽圖">
-</div>
-
-<div class="nav-bar">
-    <div class="nav-item active" onclick="showPage('addPage', this)"><span>📥</span><span>入庫</span></div>
-    <div class="nav-item" onclick="showPage('listPage', this); prepareInventoryList();"><span>📋</span><span>紀錄</span></div>
-    <div class="nav-item" onclick="showPage('pickPage', this); preparePickList();"><span>🛒</span><span>檢貨</span></div>
-</div>
-<script>
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwUqPm2eDBBZt2gAQ1PGjXc8wfBMxVpziMUNj6l1DwFUX_vVgv-RoRQm-TsjIl36GCroQ/exec"; 
-    let rawStockData = [];
-    let tempPickList = [];
-    let compressedImageData = "";
-    let inventoryPage = 1;
-    let inventoryHasMore = false;
-    let inventoryTotal = 0;
-    let lastInventoryQueryKey = "";
-    let toastTimer = null;
-    let pickPage = 1;
-    let pickHasMore = false;
-    const PAGE_SIZE = 30;
-    
-    // --- 效能優化變數 ---
-    let lastFetchTime = 0;
-    let lastInventoryFetchTime = 0;
-    const CACHE_DURATION = 20000; 
-    
-    const partners = ["萌寶目錄預購","東京速換金","妮小舖","NAZI夏批發","香港中國同行批發","橙日(日本奇異果)","ココ購","日和優選","東京買買","自行購買","尚未安排"];
-    const statusOpts = ["📝 已登記","🛒 已採買","❌ 尚未買","⚠️ 缺貨","📦 已到貨","✅ 出貨完成"];
-
-    function escapeHTML(value) {
-        return String(value ?? '').replace(/[&<>"']/g, char => ({
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#39;'
-        })[char]);
+﻿<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>智慧庫存 index2 - 桌機雙欄操作台</title><style>
+    :root {
+      --bg: #eef3f7;
+      --panel: #ffffff;
+      --soft: #f7fafc;
+      --ink: #17212b;
+      --muted: #647483;
+      --line: #dce5ec;
+      --blue: #1769d6;
+      --green: #157347;
+      --amber: #a86107;
+      --red: #b42318;
+      --shadow: 0 10px 28px rgba(22, 35, 49, .08);
     }
-
-    function escapeAttr(value) {
-        return escapeHTML(value);
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+      letter-spacing: 0;
     }
-
-    function noteArg(value) {
-        return encodeURIComponent(String(value ?? ''));
+    button, input, select { font: inherit; }
+    .desk {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 18px;
     }
-
-    function showToast(message, state = '') {
-        const toast = document.getElementById('appToast');
-        if (!toast) return;
-        clearTimeout(toastTimer);
-        toast.textContent = message;
-        toast.className = `app-toast visible ${state}`.trim();
-        toastTimer = setTimeout(() => {
-            toast.className = 'app-toast';
-        }, 1800);
+    .top {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 14px;
     }
-
-    function normalizeApiItems(data) {
-        if (Array.isArray(data)) return { items: data, total: data.length, hasMore: false };
-        if (data && data.ok === false) throw new Error(data.message || "雲端回傳失敗");
-        return {
-            items: Array.isArray(data?.items) ? data.items : [],
-            total: Number(data?.total || 0),
-            hasMore: Boolean(data?.hasMore)
-        };
+    h1 { margin: 0; font-size: 26px; line-height: 1.15; }
+    .top small { color: var(--muted); display: block; margin-top: 5px; }
+    .top-actions { display: flex; gap: 8px; align-items: center; }
+    .btn {
+      height: 42px;
+      padding: 0 14px;
+      border: 1px solid #cfdbe5;
+      border-radius: 8px;
+      background: #fff;
+      color: #314557;
+      font-weight: 800;
     }
-
-    async function apiGet(params = {}) {
-        const url = new URL(GOOGLE_SCRIPT_URL);
-        Object.entries(params).forEach(([key, value]) => {
-            if (value !== undefined && value !== null && value !== "") {
-                url.searchParams.set(key, value);
-            }
-        });
-        const res = await fetch(url.toString());
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
+    .btn.primary { border: 0; color: #fff; background: var(--blue); }
+    .nav {
+      display: inline-grid;
+      grid-template-columns: repeat(3, 116px);
+      gap: 6px;
+      padding: 6px;
+      background: #dfe8ef;
+      border-radius: 8px;
+      margin-bottom: 14px;
     }
-
-    function setUploadState(message, state = '') {
-        const box = document.getElementById('imageUploadState');
-        if (!box) return;
-        box.textContent = message;
-        box.className = `upload-state visible ${state}`.trim();
+    .nav button {
+      height: 38px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #526579;
+      font-weight: 900;
     }
-
-    function newRequestId() {
-        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-        return `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    .nav .active {
+      background: #fff;
+      color: var(--blue);
+      box-shadow: 0 3px 10px rgba(22, 35, 49, .08);
     }
-
-    async function waitForWriteResult(requestId) {
-        for (let attempt = 0; attempt < 7; attempt++) {
-            await new Promise(resolve => setTimeout(resolve, 800));
-            const last = await apiGet({ mode: 'diagnostics', _: Date.now() });
-            if (last.requestId !== requestId) continue;
-            if (last.ok === false) throw new Error(last.message || '同步失敗');
-            return { verified: true, ...last };
-        }
-        return { verified: false };
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.2fr repeat(3, minmax(0, .55fr));
+      gap: 10px;
+      margin-bottom: 14px;
     }
-
-    async function postToGoogle(payload) {
-        const requestId = payload.requestId || newRequestId();
-        const body = JSON.stringify({ ...payload, requestId });
-        try {
-            await fetch(GOOGLE_SCRIPT_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body
-            });
-            return await waitForWriteResult(requestId);
-        } catch (err) {
-            console.error("同步送出失敗。", err);
-            throw err;
-        }
+    .hero-card, .kpi {
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      box-shadow: var(--shadow);
     }
-
-    function debounce(func, delay = 300) {
-        let timer;
-        return (...args) => {
-            clearTimeout(timer);
-            timer = setTimeout(() => func.apply(this, args), delay);
-        };
+    .hero-card {
+      min-height: 146px;
+      color: #fff;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: end;
+      background:
+        linear-gradient(90deg, rgba(17, 34, 51, .95), rgba(17, 34, 51, .35)),
+        url("https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1000&q=80") center/cover;
     }
-
-    const debouncedCombinedFilter = debounce(combinedFilter);
-    const debouncedFilterPick = debounce(filterPick);
-
-    function initSelectors() {
-    const pStr = partners.map(p => `<option value="${escapeAttr(p)}">${escapeHTML(p)}</option>`).join('');
-    const sStr = statusOpts.map(s => `<option value="${escapeAttr(s)}">${escapeHTML(s)}</option>`).join('');
-
-    document.getElementById('inPartner').innerHTML = pStr;
-    // 同步入庫頁面的狀態選單
-    document.getElementById('inStatus').innerHTML = sStr; 
-
-    document.getElementById('filterPartner').innerHTML = '<option value="">-- 代購 --</option>' + pStr;
-    document.getElementById('filterStatus').innerHTML = '<option value="">-- 狀態 --</option>' + sStr;
-    document.getElementById('pickFilterPartner').innerHTML = '<option value="">-- 全部代購 --</option>' + pStr;
-    document.getElementById('pickFilterStatus').innerHTML = '<option value="">-- 全部狀態 --</option>' + sStr;
-    document.getElementById('pickFilterStatus').value = "📦 已到貨";
-}
-    initSelectors();
-
-    function autoFillLineID() {
-        const commIdInput = document.getElementById('inCommName').value.trim();
-        const lineIdInput = document.getElementById('inLineName');
-        if (!commIdInput) return;
-        const match = rawStockData.slice().reverse().find(item => 
-            item.communityName && String(item.communityName).trim() === commIdInput
-        );
-        if (match && match.lineName) { lineIdInput.value = match.lineName; }
+    .hero-card h2 { margin: 0 0 6px; font-size: 23px; }
+    .hero-card p { margin: 0; color: rgba(255,255,255,.82); }
+    .kpi { padding: 15px; }
+    .kpi span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+    .kpi strong { font-size: 25px; }
+    .kpi em { display: block; margin-top: 8px; color: var(--green); font-style: normal; font-size: 12px; font-weight: 800; }
+    .work-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 14px;
+      align-items: start;
     }
-
-    function showPage(p, el) {
-        document.querySelectorAll('.page').forEach(x => x.classList.remove('active-page'));
-        document.getElementById(p).classList.add('active-page');
-        document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
-        el.classList.add('active');
-        if (p === 'addPage') { getLatestData(); }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
     }
-
-    async function getLatestData(force = false) {
-        const now = Date.now();
-        if (!force && rawStockData.length > 0 && (now - lastFetchTime < CACHE_DURATION)) {
-            return rawStockData;
-        }
-        try {
-            const data = await apiGet({ mode: "list", page: 1, pageSize: 100 });
-            rawStockData = normalizeApiItems(data).items;
-            lastFetchTime = Date.now();
-            
-            const comms = [...new Set(rawStockData.map(i => i.communityName).filter(n => n))];
-            const lines = [...new Set(rawStockData.map(i => i.lineName).filter(n => n))];
-            const cList = document.getElementById('commList');
-            const lList = document.getElementById('lineList');
-            if(cList) cList.innerHTML = comms.map(c => `<option value="${escapeAttr(c)}">`).join('');
-            if(lList) lList.innerHTML = lines.map(l => `<option value="${escapeAttr(l)}">`).join('');
-        } catch(e) {
-            console.error("資料讀取失敗", e);
-            throw e;
-        }
-        return rawStockData;
+    .panel-head {
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
     }
-
-    function getInventoryFilters() {
-        return {
-            keyword: document.getElementById('filterID').value.toLowerCase().trim(),
-            partner: document.getElementById('filterPartner').value,
-            status: document.getElementById('filterStatus').value
-        };
+    .panel-head h2 { margin: 0; font-size: 18px; }
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1fr 150px 150px 150px auto;
+      gap: 8px;
+      padding: 12px 14px;
+      background: var(--soft);
+      border-bottom: 1px solid var(--line);
     }
-
-    function getPickFilters() {
-        return {
-            keyword: document.getElementById('pickSearchID').value.toLowerCase().trim(),
-            partner: document.getElementById('pickFilterPartner').value,
-            status: document.getElementById('pickFilterStatus').value
-        };
+    input, select {
+      height: 40px;
+      border: 1px solid #cbd8e2;
+      border-radius: 8px;
+      background: #fff;
+      padding: 0 10px;
+      min-width: 0;
     }
-
-    function inventoryQueryKey(page = 1) {
-        const filters = getInventoryFilters();
-        return JSON.stringify({
-            page,
-            pageSize: PAGE_SIZE,
-            keyword: filters.keyword,
-            partner: filters.partner,
-            status: filters.status
-        });
+    .sync {
+      border: 0;
+      border-radius: 8px;
+      background: #e8f1ff;
+      color: var(--blue);
+      font-weight: 900;
+      padding: 0 13px;
     }
-
-    async function prepareInventoryList(force = false) {
-        const btn = document.getElementById('syncListBtn');
-        const firstPageKey = inventoryQueryKey(1);
-        if (!force && rawStockData.length && firstPageKey === lastInventoryQueryKey && (Date.now() - lastInventoryFetchTime < CACHE_DURATION)) {
-            renderList(rawStockData, { total: inventoryTotal });
-            return;
-        }
-        if(btn) { btn.disabled = true; btn.innerText = "🔄 正在讀取第 1 頁..."; }
-        try {
-            inventoryPage = 1;
-            await loadInventoryPage(false);
-            if(btn) {
-                btn.innerText = "✅ 同步完成！";
-                setTimeout(() => { btn.disabled = false; btn.innerText = "🔄 點此同步最新雲端庫存"; }, 1000);
-            }
-        } catch (e) { alert("同步失敗"); if(btn) btn.disabled = false; }
+    .records {
+      padding: 12px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
     }
-
-    async function loadInventoryPage(append = false) {
-        const filters = getInventoryFilters();
-        const data = await apiGet({
-            mode: "list",
-            page: inventoryPage,
-            pageSize: PAGE_SIZE,
-            keyword: filters.keyword,
-            partner: filters.partner,
-            status: filters.status
-        });
-        const result = normalizeApiItems(data);
-        inventoryHasMore = result.hasMore;
-        inventoryTotal = result.total;
-        lastInventoryQueryKey = inventoryQueryKey(inventoryPage);
-        lastInventoryFetchTime = Date.now();
-        rawStockData = append ? rawStockData.concat(result.items) : result.items;
-        renderList(rawStockData, { total: result.total });
+    .record {
+      border: 1px solid #e1e9ef;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
     }
-
-    async function loadMoreInventory() {
-        if (!inventoryHasMore) return;
-        inventoryPage += 1;
-        await loadInventoryPage(true);
+    .record-top {
+      display: grid;
+      grid-template-columns: 86px 1fr;
+      gap: 11px;
+      padding: 10px;
     }
-
-    async function combinedFilter() {
-        inventoryPage = 1;
-        document.getElementById('inventoryContainer').innerHTML = '搜尋中...';
-        try {
-            await loadInventoryPage(false);
-        } catch (e) {
-            console.error(e);
-            document.getElementById('inventoryContainer').innerHTML = '搜尋失敗，請稍後再試。';
-        }
+    .record img {
+      width: 86px;
+      height: 86px;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 1px solid #e1e9ef;
     }
-
-    async function viewImage(src, rowId) {
-    const viewer = document.getElementById('imageViewer');
-    const fullImg = document.getElementById('fullImage');
-    fullImg.src = src;
-    viewer.style.display = 'flex';
-    if (rowId) {
-        try {
-            const data = await apiGet({ mode: "item", rowId });
-            if (data?.ok && data.item?.imageUrl) fullImg.src = data.item.imageUrl;
-        } catch (e) {
-            console.warn("讀取原圖失敗，改顯示縮圖。", e);
-        }
+    .record h3 {
+      margin: 0 0 4px;
+      font-size: 17px;
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 8px;
     }
-
-    function renderList(items, meta = {}) {
-    let totalCash = 0, arrivedCash = 0, totalQty = 0;
-    const htmlBuffer = [];
-    
-    items.forEach(item => {
-        const itemQty = Number(item.qty || 0);
-        const itemPrice = Number(item.price || 0);
-        const itemValue = itemPrice * itemQty;
-        totalCash += itemValue; 
-        totalQty += itemQty;
-        if (item.status === "📦 已到貨") arrivedCash += itemValue;
-
-        const rawNote = item.note || '';
-        const safeNoteForJS = noteArg(rawNote);
-        const displayNote = rawNote ? escapeHTML(rawNote).replace(/\n/g, '<br>') : '+ 補備註';
-        const safeImage = escapeAttr(item.image || 'https://via.placeholder.com/100');
-        const safeCommunityName = escapeHTML(item.communityName || '無');
-        const safeLineName = escapeHTML(item.lineName || '');
-
-        htmlBuffer.push(`
-        <div class="inventory-item" style="position: relative; flex-direction: column; align-items: stretch; ${item.status === '📦 已到貨' ? 'border-left-color: #27ae60;' : ''}">
-            <div style="position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; z-index: 10;">
-                <button onclick="triggerEditPhoto(${item.row})"
-                        style="width: 70px; height: 32px; background: #3498db; color: white; border-radius: 6px; font-size: 11px; font-weight: bold; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; padding: 0;">
-                    <span>📷</span><span>換圖</span>
-                </button>
-                <button onclick="deleteRow(${item.row})"
-                        style="width: 70px; height: 32px; background: #ff4d4d; color: white; border-radius: 6px; font-size: 11px; font-weight: bold; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; padding: 0;">
-                    <span>🗑️</span><span>刪除</span>
-                </button>
-            </div>
-
-            <div style="display: flex; align-items: flex-start; width: 100%;">
-                <img src="${safeImage}" id="img_${item.row}" loading="lazy" style="cursor: pointer;"
-                     onclick="viewImage(this.src, '${escapeAttr(item.rowId || item.row)}')"
-                     onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
-                <div class="item-info" style="flex: 1; padding-right: 80px;">
-                    <span class="comm-text" style="color: #2c3e50; font-size: 20px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${safeCommunityName}</span>
-                    <span class="id-text" style="color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px;">👤 LINE: ${safeLineName}</span>
-                    <div class="${item.note ? 'note-text' : 'note-empty'}" onclick="openNoteModal(${item.row}, decodeURIComponent('${safeNoteForJS}'))" style="margin-bottom: 5px;">
-                        ${item.note ? '📝 ' + displayNote : '+ 補備註'}
-                    </div>
-                    <div style="font-weight: bold; font-size: 16px; color: #27ae60; margin-top: auto;">
-                        💰 $${itemPrice} <span style="font-size:12px; color:#999;">(總 $${itemValue})</span> | 📦 ${itemQty}件
-                    </div>
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 8px; margin-top: 12px; width: 100%;">
-                <select class="select-mini" style="flex: 1; height: 38px;" onchange="updateRow(${item.row}, 'partner', this.value)">
-                    ${partners.map(p => `<option value="${escapeAttr(p)}" ${item.partner === p ? 'selected' : ''}>${escapeHTML(p)}</option>`).join('')}
-                </select>
-                <select class="select-mini" style="flex: 1; height: 38px; ${item.status === '📦 已到貨' ? 'border-color: #27ae60; color: #27ae60 !important;' : ''}" onchange="updateRow(${item.row}, 'status', this.value)">
-                    ${statusOpts.map(s => `<option value="${escapeAttr(s)}" ${item.status === s ? 'selected' : ''}>${escapeHTML(s)}</option>`).join('')}
-                </select>
-            </div>
-        </div>`);
-    });
-
-    if (!htmlBuffer.length) {
-        document.getElementById('inventoryContainer').innerHTML = '<div class="card" style="text-align:center; color:#666;">目前沒有符合條件的庫存</div>';
-    } else {
-        document.getElementById('inventoryContainer').innerHTML = htmlBuffer.join('') + `
-            <button onclick="loadMoreInventory()" ${inventoryHasMore ? '' : 'disabled'}
-                    style="background:${inventoryHasMore ? '#007bff' : '#d0d7de'}; color:white; height:44px; margin-bottom:15px;">
-                ${inventoryHasMore ? '載入更多' : '已載入全部'}
-            </button>`;
+    .note {
+      display: inline-block;
+      max-width: 100%;
+      padding: 5px 8px;
+      border-radius: 7px;
+      background: #f1f5f8;
+      color: #3d5060;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    
-    // 統計更新部分保持不變
-    document.getElementById('statCash').innerHTML = `
-            <div style="text-align:center;">
-            <div style="font-size: 11px; opacity: 0.8;">總計 / 現貨</div>
-            <div>💰 $${totalCash} / <span style="color:#afffaf;">$${arrivedCash}</span></div>
-        </div>`;
-    document.getElementById('statQty').innerText = `📦 ${totalQty} 件 / 共 ${meta.total ?? items.length} 筆`;
-}
-
-    async function triggerEditPhoto(row) {
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = 'image/*';
-    
-    fileInput.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        // 1. 介面回饋：讓圖片變淡，表示處理中
-        const imgElement = document.getElementById(`img_${row}`);
-        if (imgElement) {
-            imgElement.style.opacity = "0.3";
-            imgElement.style.filter = "grayscale(100%)";
-        }
-
-        const reader = new FileReader();
-        reader.onload = function(event) {
-            const img = new Image();
-            img.onload = async function() {
-                // 2. 畫布重繪：徹底切斷與原始「長檔名檔案」的物理聯繫
-                const cvs = document.createElement('canvas');
-                const maxW = 500; // 縮小尺寸確保傳輸穩定
-                const scale = Math.min(1, maxW / img.width);
-                cvs.width = img.width * scale;
-                cvs.height = img.height * scale;
-                const ctx = cvs.getContext('2d');
-                ctx.drawImage(img, 0, 0, cvs.width, cvs.height);
-                
-                // 3. 轉成品質 0.4 的編碼 (長度適中，適合存入 Google Sheets)
-                const base64Data = cvs.toDataURL('image/jpeg', 0.4); 
-
-                try {
-                    // 4. 【核心改進】手動拼接 JSON 字串
-                    // 這樣寫可以確保傳出的 body 裡面絕對沒有原始檔案的長檔名 metadata
-                    const cleanJsonPayload = JSON.stringify({
-                        "method": "UPDATE",
-                        "row": parseInt(row),
-                        "image": base64Data
-                    });
-
-                    const result = await postToGoogle(JSON.parse(cleanJsonPayload));
-
-                    // 5. 更新成功後的 UI 恢復
-                    if (imgElement) {
-                        imgElement.src = result.thumbnailUrl || result.imageUrl || base64Data;
-                        imgElement.style.opacity = "1";
-                        imgElement.style.filter = "none";
-                    }
-                    alert("✅ 換圖成功！");
-                } catch (err) {
-                    console.error("上傳失敗:", err);
-                    alert("❌ 上傳失敗，請嘗試截圖後上傳");
-                    if (imgElement) {
-                        imgElement.src = imgElement.src; // 恢復原狀
-                        imgElement.style.opacity = "1";
-                        imgElement.style.filter = "none";
-                    }
-                }
-            };
-            img.src = event.target.result;
-        };
-        reader.readAsDataURL(file);
-    };
-    fileInput.click();
-}
-
-    async function preparePickList() {
-        const btn = document.getElementById('pickSyncBtn');
-        btn.disabled = true; btn.innerText = "🔄 正在讀取第 1 頁...";
-        try {
-            document.getElementById('pickFilterStatus').value = "📦 已到貨";
-            pickPage = 1;
-            await loadPickPage(false);
-            btn.innerText = "✅ 同步完成！";
-            setTimeout(() => { btn.disabled = false; btn.innerText = "🔄 刷新同步雲端庫存"; }, 1000);
-        } catch (e) { alert("同步失敗"); btn.disabled = false; }
+    .record-bottom {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+      align-items: center;
+      padding: 9px 10px;
+      border-top: 1px solid var(--line);
+      background: #fbfdff;
     }
-
-    async function loadPickPage(append = false) {
-    const filters = getPickFilters();
-    const data = await apiGet({
-        mode: "list",
-        page: pickPage,
-        pageSize: PAGE_SIZE,
-        keyword: filters.keyword,
-        partner: filters.partner,
-        status: filters.status
-    });
-    const result = normalizeApiItems(data);
-    pickHasMore = result.hasMore;
-    rawStockData = append ? rawStockData.concat(result.items) : result.items;
-    renderPickList(rawStockData);
-}
-
-    async function loadMorePick() {
-    if (!pickHasMore) return;
-    pickPage += 1;
-    await loadPickPage(true);
-}
-
-    async function filterPick() {
-    pickPage = 1;
-    document.getElementById('pickListContainer').innerHTML = '搜尋中...';
-    try {
-        await loadPickPage(false);
-    } catch (e) {
-        console.error(e);
-        document.getElementById('pickListContainer').innerHTML = '搜尋失敗，請稍後再試。';
+    .money { font-weight: 900; color: var(--green); font-size: 18px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 8px;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
     }
-}
-
-    function renderPickList(items) {
-
-    const htmlBuffer = items.map(item => {
-        const isPicked = tempPickList.some(p => p.row === item.row);
-        const isOutOfStock = (item.qty <= 0);
-        const isDisable = isOutOfStock || isPicked;
-        const btnText = isPicked ? "已選" : (isOutOfStock ? "無貨" : "選取");
-        
-        const rawNote = item.note || '';
-        const safeNoteForJS = noteArg(rawNote);
-        const displayNote = rawNote ? escapeHTML(rawNote).replace(/\n/g, '<br>') : '+ 補備註';
-        const safeImage = escapeAttr(item.image || 'https://via.placeholder.com/100');
-        const safeCommunityName = escapeHTML(item.communityName || '無');
-        const safeLineName = escapeHTML(item.lineName || '無');
-        const safePartner = escapeHTML(item.partner || '未安排');
-        const safeStatus = escapeHTML(item.status || '');
-        
-        return `
-        <div class="inventory-item" style="position: relative; flex-direction: column; align-items: stretch; ${isDisable ? 'opacity: 0.7;' : ''}">
-            
-            <div style="position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 5px; align-items: flex-end; z-index: 10;">
-                <input type="number" id="pQty_${item.row}" value="${isOutOfStock ? 0 : item.qty}" min="1" max="${item.qty}" ${isDisable ? 'disabled' : ''} 
-                       style="width: 70px; height: 32px; margin: 0; text-align: center; font-weight: bold; border: 2px solid #2ecc71; padding: 2px; border-radius: 6px;">
-                <button onclick="addPick(${item.row})" ${isDisable ? 'disabled' : ''} 
-                        style="width: 70px; height: 32px; margin: 0; background: ${isDisable ? '#bdc3c7' : '#2ecc71'}; color: white; border-radius: 6px; font-size: 13px; padding: 0;">
-                    ${btnText}
-                </button>
-            </div>
-
-            <div style="display: flex; align-items: flex-start; width: 100%;">
-                <img src="${safeImage}" 
-                     loading="lazy" 
-                     style="cursor: pointer;" 
-                     onclick="viewImage(this.src, '${escapeAttr(item.rowId || item.row)}')"
-                     onerror="this.src='https://via.placeholder.com/100?text=無圖片'">
-                
-                <div class="item-info" style="flex: 1; padding-right: 80px;">
-                    <span class="comm-text" style="color: #2c3e50; font-size: 14px; font-weight: bold; display: block; margin-bottom: 2px;">💬 社群: ${safeCommunityName}</span>
-                    <span class="id-text" style="color: #5d6d7e; font-size: 13px; display: block; margin-bottom: 8px;">👤 LINE: ${safeLineName}</span>
-                    <div class="${item.note ? 'note-text' : 'note-empty'}" onclick="openNoteModal(${item.row}, decodeURIComponent('${safeNoteForJS}'))" style="margin-bottom: 5px;">
-                        ${item.note ? '📝 ' + displayNote : '+ 補備註'}
-                    </div>
-                    <div style="font-weight: bold; font-size: 16px; color: #27ae60; margin-top: auto;">
-                        💰 $${item.price} | 📦 庫存 ${item.qty}
-                    </div>
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 8px; margin-top: 12px; width: 100%;">
-                <div class="select-mini" style="flex: 1; text-align: center; border-color: #ddd; background: #f9f9f9; display: flex; align-items: center; justify-content: center; height: 38px;">
-                    ${safePartner}
-                </div>
-                <div class="select-mini" style="flex: 1; text-align: center; border-color: #2ecc71; color: #27ae60; background: #f1f8e9; display: flex; align-items: center; justify-content: center; height: 38px;">
-                    ${safeStatus}
-                </div>
-            </div>
-        </div>`;
-    }).join('');
-    
-    if (!htmlBuffer.length) {
-        document.getElementById('pickListContainer').innerHTML = '<div class="card" style="text-align:center; color:#666;">目前沒有符合條件的檢貨項目</div>';
-    } else {
-        document.getElementById('pickListContainer').innerHTML = htmlBuffer + `
-            <button onclick="loadMorePick()" ${pickHasMore ? '' : 'disabled'}
-                    style="background:${pickHasMore ? '#2ecc71' : '#d0d7de'}; color:white; height:44px; margin-bottom:15px;">
-                ${pickHasMore ? '載入更多' : '已載入全部'}
-            </button>`;
+    .chip.green { background: #e8f7ef; color: var(--green); }
+    .chip.amber { background: #fff2db; color: var(--amber); }
+    .chip.blue { background: #e8f1ff; color: #155bc0; }
+    .mini-actions { display: flex; gap: 6px; }
+    .icon {
+      width: 34px;
+      height: 34px;
+      border: 1px solid #d5e0e8;
+      border-radius: 8px;
+      background: #fff;
     }
-}
-
-    function addPick(row) {
-        const item = rawStockData.find(i => i.row === row);
-        if (!item) return alert("找不到這筆商品，請先重新同步。");
-        const qty = Number(document.getElementById(`pQty_${row}`).value);
-        if (qty <= 0 || qty > item.qty) return alert("數量錯誤");
-        tempPickList.push({ ...item, pickQty: qty });
-        renderSummary(); renderPickList(rawStockData);
+    .icon.danger { color: var(--red); background: #fff0ef; border-color: #ffd2cf; }
+    .pick-panel {
+      position: sticky;
+      top: 18px;
     }
-
-    function renderSummary() {
-        const box = document.getElementById('pickSummary');
-        const statCount = document.getElementById('pickStatCount');
-        const totalDisplay = document.getElementById('pickTotalDisplay');
-        const totalAmount = document.getElementById('pickTotalAmount');
-        const confirmButton = document.getElementById('createPickSheetBtn');
-        if(!tempPickList.length) {
-            box.innerHTML = "尚未選取商品";
-            statCount.innerText = "0 件";
-            totalDisplay.style.display = 'none';
-            confirmButton.disabled = true;
-            return;
-        }
-        let totalQty = 0, totalPrice = 0;
-        box.innerHTML = tempPickList.map((i, idx) => {
-            totalQty += i.pickQty; totalPrice += (i.price * i.pickQty);
-            const displayName = escapeHTML(i.communityName ? i.communityName : i.lineName);
-            const safeImage = escapeAttr(i.image || 'https://via.placeholder.com/100?text=無圖片');
-            return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; padding:8px; background:white; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
-                <img src="${safeImage}" loading="lazy" onclick="viewImage(this.src, '${escapeAttr(i.rowId || i.row)}')" onerror="this.src='https://via.placeholder.com/100?text=無圖片'" style="width:60px; height:60px; border-radius:8px; object-fit:cover; flex-shrink:0; cursor:pointer; border:1px solid #eef0f2;">
-                <div style="display:flex; flex-direction:column; flex:1; min-width:0;">
-                    <span style="font-weight:bold; color:#2c3e50; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">💬 ${displayName}</span>
-                    <span style="font-size:12px; color:#7f8c8d;">數量: ${i.pickQty} | 小計: $${i.price * i.pickQty}</span>
-                </div>
-                <button onclick="removeItem(${idx}, ${i.row})" style="width:auto; flex-shrink:0; background:#ff4d4d; color:white; padding:7px 10px; border-radius:6px; font-size:12px;">移除</button>
-            </div>`;
-        }).join('');
-        statCount.innerText = `${totalQty} 件`; totalAmount.innerText = `$${totalPrice}`; totalDisplay.style.display = 'block';
-        confirmButton.disabled = false;
+    .pick-list {
+      padding: 12px;
+      display: grid;
+      gap: 9px;
     }
-
-    function removeItem(idx, row) { tempPickList.splice(idx, 1); renderSummary(); renderPickList(rawStockData); }
-
-    function confirmPickAndShowSheet() {
-        const name = document.getElementById('pickCollectorName').value;
-        if(!tempPickList.length || !name) return alert("請填寫領取人並選取商品");
-        document.getElementById('resName').innerText = name;
-        const now = new Date();
-        document.getElementById('resTime').innerText = `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()}`;
-        let total = 0, tableHtml = "";
-        tempPickList.forEach(i => {
-            total += i.price * i.pickQty;
-            const displayName = escapeHTML(i.communityName ? i.communityName : i.lineName);
-            const displayNote = i.note ? '📝 ' + escapeHTML(i.note).replace(/\n/g, '<br>') : '(無備註)';
-            const safeImage = escapeAttr(i.image || 'https://via.placeholder.com/150');
-            tableHtml += `<tr style="border-bottom: 1px solid #eee;"><td style="width: 150px; padding: 10px; text-align: center;"><img src="${safeImage}" style="width:150px; height:150px; object-fit:cover; border-radius:8px;"></td><td style="text-align:left; padding: 15px;"><div style="font-weight:bold; font-size: 18px;">💬 ${displayName}</div><div style="font-size:14px; color:#555; margin-top:5px; background:#f9f9f9; padding:5px; border-radius:4px;">${displayNote}</div></td><td style="text-align:center; width: 60px;">${i.pickQty}</td><td style="text-align:center; width: 90px; font-weight:bold; color: #e74c3c;">$${i.price * i.pickQty}</td></tr>`;
-        });
-        document.getElementById('resTableBody').innerHTML = tableHtml; document.getElementById('resTotal').innerText = `$${total}`;
-        document.getElementById('printOverlay').style.display = 'block'; document.getElementById('printOverlay').scrollTo(0, 0);
+    .pick-row {
+      display: grid;
+      grid-template-columns: 58px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid #e1e9ef;
+      border-radius: 8px;
+      background: #fff;
     }
-
-    async function finalCommitToGoogle() {
-        if(!confirm("確定要扣庫存結案嗎？")) return;
-        const btn = document.getElementById('finalConfirmBtn'); btn.disabled = true; btn.innerText = "🚀 同步中...";
-        try {
-            await postToGoogle({
-                method: "SHIP_BATCH",
-                collectorName: document.getElementById('pickCollectorName').value,
-                items: tempPickList.map(item => ({
-                    rowId: item.rowId,
-                    row: item.row,
-                    pickQty: item.pickQty
-                }))
-            });
-            alert("結案成功"); location.reload();
-        } catch (e) { alert("失敗"); btn.disabled = false; }
+    .pick-row img {
+      width: 58px;
+      height: 58px;
+      border-radius: 8px;
+      object-fit: cover;
     }
-
-    function openNoteModal(row, note) { document.getElementById('editNoteRow').value = row; document.getElementById('editNoteInput').value = note; document.getElementById('noteModal').style.display = 'flex'; }
-
-    function applyNoteLocally(row, note) {
-        rawStockData.forEach(item => {
-            if (Number(item.row) === row) item.note = note;
-        });
-        tempPickList.forEach(item => {
-            if (Number(item.row) === row) item.note = note;
-        });
-        if (document.getElementById('listPage').classList.contains('active-page')) renderList(rawStockData, { total: inventoryTotal });
-        if (document.getElementById('pickPage').classList.contains('active-page')) {
-            renderPickList(rawStockData);
-            renderSummary();
-        }
+    .pick-row b {
+      display: block;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-
-    async function saveNote() {
-        const row = parseInt(document.getElementById('editNoteRow').value, 10);
-        const note = document.getElementById('editNoteInput').value;
-        const originalItem = rawStockData.find(item => Number(item.row) === row) ||
-            tempPickList.find(item => Number(item.row) === row);
-        const originalNote = originalItem ? String(originalItem.note || "") : "";
-
-        document.getElementById('noteModal').style.display = 'none';
-        applyNoteLocally(row, note);
-        showToast("備註已更新，背景同步中...");
-
-        try {
-            await postToGoogle({ method: "UPDATE", row, note });
-            showToast("備註已同步", "success");
-        } catch (err) {
-            applyNoteLocally(row, originalNote);
-            showToast("備註同步失敗，已恢復原內容", "error");
-        }
+    .pick-row span { color: var(--muted); font-size: 12px; }
+    .remove {
+      width: 34px;
+      height: 34px;
+      border: 0;
+      border-radius: 8px;
+      color: var(--red);
+      background: #fff0ef;
+      font-weight: 900;
     }
-
-    function updateRow(row, key, val) {
-        showToast("正在同步變更...");
-        return postToGoogle({
-            method: "UPDATE",
-            row: parseInt(row),
-            [key]: val
-        }).then(() => {
-            showToast("變更已同步", "success");
-        }).catch(() => {
-            showToast("同步失敗，請重新整理確認", "error");
-        });
+    .total {
+      padding: 14px;
+      background: var(--soft);
+      border-top: 1px solid var(--line);
     }
-    async function deleteRow(row) { if(confirm("確定刪除？")) { await postToGoogle({ method: "DELETE", row: row }); prepareInventoryList(); } }
-
-    document.getElementById('cameraInput').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setUploadState("正在處理照片...");
-    const previewImg = document.getElementById('preview');
-    if (previewImg) previewImg.style.opacity = '0.5';
-
-    const reader = new FileReader();
-    reader.onload = function(event) {
-        const img = new Image();
-        img.onload = function() {
-            const cvs = document.createElement('canvas');
-            
-            // 💡 優化：將最大寬度限制在 600px，有效防止 Base64 爆量
-            const maxW = 600; 
-            const scale = Math.min(1, maxW / img.width); 
-            cvs.width = img.width * scale;
-            cvs.height = img.height * scale;
-            
-            const ctx = cvs.getContext('2d');
-            ctx.drawImage(img, 0, 0, cvs.width, cvs.height);
-            
-            // 💡 優化：品質調降至 0.5 (JPEG)，體積會比 0.7 小非常多
-            // 這能解決「Xiaomi Smart Camera...」這類高解析照片傳不動的問題
-            compressedImageData = cvs.toDataURL('image/jpeg', 0.5);
-            
-            if (previewImg) {
-                previewImg.src = compressedImageData;
-                previewImg.style.display = 'block';
-                previewImg.style.opacity = '1';
-            }
-            setUploadState("照片已準備，確認入庫後會上傳至 Drive。");
-        };
-        img.onerror = function() {
-            setUploadState("照片無法讀取，請重新選擇。", "error");
-        };
-        img.src = event.target.result;
-    };
-    reader.onerror = function() {
-        setUploadState("照片無法讀取，請重新選擇。", "error");
-    };
-    reader.readAsDataURL(file);
-});
-
-    async function addToInventory() {
-    const comm = document.getElementById('inCommName').value.trim(); 
-    if(!comm) return alert("❌ 請填寫【社群 ID】，此為必填欄位！");
-    const qty = Number(document.getElementById('inQty').value);
-    const price = Number(document.getElementById('inPrice').value);
-    if (!Number.isFinite(qty) || qty <= 0) return alert("數量必須大於 0。");
-    if (!Number.isFinite(price) || price < 0) return alert("金額不能小於 0。");
-
-    const btn = document.getElementById('inBtn'); 
-    btn.disabled = true; 
-    btn.innerText = compressedImageData ? "上傳中..." : "同步中...";
-    setUploadState(compressedImageData ? "正在上傳照片至 Drive..." : "正在新增庫存...");
-
-    try {
-        const payload = {
-            method: "ADD",
-            lineName: document.getElementById('inLineName').value || "",
-            communityName: comm,
-            qty,
-            price,
-            partner: document.getElementById('inPartner').value || "",
-            note: document.getElementById('inNote').value || "",
-            // --- 修改這裡：從 HTML 選單抓取狀態 ---
-            status: document.getElementById('inStatus').value, 
-            // --------------------------------------
-            image: typeof compressedImageData !== 'undefined' ? compressedImageData : ""
-        };
-
-        const result = await postToGoogle(payload);
-
-        if (result.verified && result.imageUrl) {
-            setUploadState("圖片已存到 Drive，入庫完成。", "success");
-        } else if (result.verified) {
-            setUploadState("入庫完成。", "success");
-        } else {
-            setUploadState("資料已送出，請到記錄頁確認寫入結果。");
-        }
-        if (result.verified) {
-            document.getElementById('inCommName').value = "";
-            document.getElementById('inLineName').value = "";
-            document.getElementById('inQty').value = 1;
-            document.getElementById('inPrice').value = "";
-            document.getElementById('inNote').value = "";
-            document.getElementById('cameraInput').value = "";
-            compressedImageData = "";
-            const preview = document.getElementById('preview');
-            if (preview) preview.style.display = "none";
-        }
-        btn.disabled = false;
-        btn.innerText = "確認同步入庫";
-    } catch (err) {
-        console.error("入庫出錯:", err);
-        setUploadState(err.message || "入庫失敗，請重試。", "error");
-        btn.disabled = false;
-        btn.innerText = "重新同步";
+    .total-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--muted);
+      margin-bottom: 10px;
     }
-}
-
-    function addAllFilteredToPick() {
-    // 1. 取得目前的篩選條件 (與 filterPick 邏輯同步)
-    const idKey = document.getElementById('pickSearchID').value.trim(); // 保持原始大小寫，填入名稱較美觀
-    const statusKey = document.getElementById('pickFilterStatus').value;
-    const partnerKey = document.getElementById('pickFilterPartner').value;
-    const searchTerms = idKey ? idKey.toLowerCase().split(/\s+/) : [];
-    
-    // 2. 找出符合目前畫面上顯示的所有項目
-    const filteredItems = rawStockData.filter(i => {
-        const matchSearch = searchTerms.every(term => 
-            (i.lineName && String(i.lineName).toLowerCase().includes(term)) || 
-            (i.communityName && String(i.communityName).toLowerCase().includes(term)) ||
-            (i.note && String(i.note).toLowerCase().includes(term))
-        );
-        const matchStatus = (statusKey === "" || i.status === statusKey);
-        const matchPartner = (partnerKey === "" || i.partner === partnerKey);
-        return (searchTerms.length === 0 || matchSearch) && matchStatus && matchPartner;
-    });
-
-    // 3. 執行批次加入
-    let addedCount = 0;
-    filteredItems.forEach(item => {
-        const isAlreadyIn = tempPickList.some(p => p.row === item.row);
-        if (!isAlreadyIn && item.qty > 0) {
-            tempPickList.push({ ...item, pickQty: item.qty });
-            addedCount++;
-        }
-    });
-
-    if (addedCount > 0) {
-        // --- 關鍵位置：自動同步名稱 ---
-        if (idKey) {
-            document.getElementById('pickCollectorName').value = idKey;
-        }
-        
-        renderSummary(); // 更新下方清單與總金額
-        renderPickList(rawStockData);    // 刷新上方列表顯示「已選」
-    } else {
-        alert("沒有可加入的商品（可能已在清單中或庫存為 0）");
+    .total-line strong { color: var(--ink); font-size: 25px; }
+    .finish {
+      width: 100%;
+      height: 44px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--green);
+      color: #fff;
+      font-weight: 900;
     }
-}
-
-    document.getElementById('filterID').oninput = debouncedCombinedFilter;
-    document.getElementById('pickSearchID').oninput = debouncedFilterPick;
-    document.getElementById('inCommName').onblur = autoFillLineID; 
-</script>
-</body>
-</html>
+    @media (max-width: 1050px) {
+      .hero-grid { grid-template-columns: repeat(2, 1fr); }
+      .work-grid { grid-template-columns: 1fr; }
+      .pick-panel { position: static; }
+    }
+    @media (max-width: 760px) {
+      .top, .toolbar, .hero-grid { grid-template-columns: 1fr; }
+      .records { grid-template-columns: 1fr; }
+      .nav { width: 100%; grid-template-columns: repeat(3, 1fr); }
+    }
+  
+.view { display: none; }
+.view.active { display: block; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 14px; }
+.form-grid .full { grid-column: 1 / -1; }
+textarea.field { height: 88px; padding-top: 10px; resize: vertical; }
+.preview { max-height: 260px; width: 100%; object-fit: contain; border-radius: 8px; background: #f1f5f8; border: 1px solid var(--line); display: none; }
+.toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(12px); z-index: 8000; background: rgba(23,33,43,.94); color: #fff; padding: 10px 14px; border-radius: 8px; opacity: 0; transition: .2s ease; pointer-events: none; }
+.toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.success { background: rgba(30,143,88,.96); }
+.toast.error { background: rgba(180,35,24,.96); }
+.record-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
+.record-controls select, .table-row select { height: 32px; border: 1px solid #cbd7e1; border-radius: 8px; background: #fff; padding: 0 8px; min-width: 0; font-size: 13px; max-width: 150px; }
+.qty-input { width: 54px; height: 34px; border: 1px solid #cbd7e1; border-radius: 8px; padding: 0 8px; }
+.add-pick { border: 0; border-radius: 8px; height: 34px; padding: 0 10px; background: var(--blue); color: #fff; font-weight: 800; }
+.record.is-full { opacity: .62; background: #f5f7fa; }
+.record.is-full img { filter: grayscale(35%); }
+.record.is-full .money { color: #7a8793; }
+.qty-input:disabled { background: #eef2f5; color: #8a98a6; cursor: not-allowed; }
+.add-pick:disabled, .icon:disabled { background: #e1e7ed !important; color: #7a8793 !important; cursor: not-allowed; border-color: #d4dde5 !important; }
+.chip.full { background: #eef2f6; color: #647483; }
+.pick-row div span, .pick-card div span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clear-pick { width: 100%; height: 38px; border: 1px solid #d5e0e8; border-radius: 8px; background: #fff; color: #526579; font-weight: 800; margin-bottom: 8px; }
+.clear-pick:disabled { background: #eef2f5; color: #99a6b2; cursor: not-allowed; }
+.empty { padding: 26px; color: var(--muted); text-align: center; }
+.load-more { margin: 0 12px 12px; height: 42px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; font-weight: 800; }
+.modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(10,20,30,.48); z-index: 7000; padding: 16px; }
+.modal.open { display: flex; }
+.modal-card { width: min(420px, 100%); background: #fff; border-radius: 8px; padding: 16px; box-shadow: var(--shadow, 0 10px 28px rgba(22,35,49,.12)); }
+.modal-card h3 { margin: 0 0 10px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 10px; }
+.modal-actions button { flex: 1; height: 42px; border: 0; border-radius: 8px; font-weight: 800; }
+.viewer { position: fixed; inset: 0; z-index: 7500; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.88); cursor: zoom-out; }
+.viewer.open { display: flex; }
+.viewer img { max-width: 94vw; max-height: 92vh; border-radius: 8px; }
+.print-overlay { position: fixed; inset: 0; z-index: 7600; display: none; overflow: auto; background: #fff; padding: 20px; }
+.print-overlay.open { display: block; }
+.print-card { max-width: 900px; margin: 0 auto; }
+.print-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.print-table td, .print-table th { border-bottom: 1px solid #e5edf3; padding: 10px; text-align: left; }
+.print-img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; }
+@media print { body > *:not(.print-overlay) { display: none !important; } .print-overlay { display: block !important; position: static !important; padding: 0 !important; } .no-print { display: none !important; } }</style></head><body data-theme="desk"><div id="toast" class="toast" role="status" aria-live="polite"></div>
+<div id="imageViewer" class="viewer" onclick="this.classList.remove('open')"><img id="fullImage" alt="預覽圖"></div>
+<div id="noteModal" class="modal"><div class="modal-card"><h3>修改備註</h3><textarea id="editNoteInput" class="field" style="width:100%; height:120px;"></textarea><input type="hidden" id="editNoteRow"><div class="modal-actions"><button onclick="closeNoteModal()" style="background:#eef2f6; color:#40515f;">取消</button><button onclick="saveNote()" style="background:var(--blue); color:#fff;">儲存</button></div></div></div>
+<div id="printOverlay" class="print-overlay"><div class="print-card"><h1 style="text-align:center;">商品明細表</h1><p><b>領取人：</b><span id="resName"></span>　<b>時間：</b><span id="resTime"></span></p><table class="print-table"><tbody id="resTableBody"></tbody></table><h2 style="text-align:right;">總計 <span id="resTotal"></span></h2><div class="no-print" style="display:flex; gap:10px; margin-top:18px;"><button class="primary" id="finalConfirmBtn" onclick="finalCommitToGoogle()">確認出貨</button><button class="btn" onclick="window.print()">列印/PDF</button><button class="btn" onclick="document.getElementById('printOverlay').classList.remove('open')">返回修改</button></div></div></div>
+<main class="desk">
+  <header class="top"><div><h1>智慧庫存工作台</h1><small id="syncTime">尚未同步</small></div><div class="top-actions"><button class="btn" onclick="window.print()">匯出明細</button><button class="btn primary" data-view="addView">新增入庫</button></div></header>
+  <nav class="nav"><button data-view="addView">入庫</button><button class="active" data-view="recordView">紀錄</button><button data-view="recordView">檢貨</button></nav>
+  <section id="addView" class="view"><section class="panel"><div class="panel-head"><h2>拍照入庫</h2><span class="chip blue">Drive 圖片上傳</span></div><div class="form-grid"><input class="field full" type="file" id="cameraInput" accept="image/*" capture="environment"><img id="preview" class="preview full" alt="圖片預覽"><input class="field" id="inCommName" placeholder="社群 ID（必填）"><input class="field" id="inLineName" placeholder="LINE ID"><input class="field" id="inQty" type="number" value="1" min="1" placeholder="數量"><input class="field" id="inPrice" type="number" min="0" placeholder="金額"><select class="field" id="inPartner"></select><select class="field" id="inStatus"></select><textarea class="field full" id="inNote" placeholder="備註"></textarea><button class="primary full" id="inBtn" onclick="addToInventory()">確認同步入庫</button></div></section></section>
+  <section id="recordView" class="view active">
+    <section class="hero-grid"><div class="hero-card"><h2>今日庫存工作</h2><p id="syncState">雲端待同步</p></div><div class="kpi"><span>庫存筆數</span><strong id="statCount">0</strong><em>已同步</em></div><div class="kpi"><span>已載入件數</span><strong id="statQty">0</strong><em>目前畫面</em></div><div class="kpi"><span>已載入金額</span><strong id="statCash"></strong><em>目前畫面</em></div></section>
+    <section class="work-grid"><section class="panel"><div class="panel-head"><h2>庫存紀錄</h2><span class="chip blue" id="loadInfo">載入 0 / 0</span></div><div class="toolbar"><input id="filterID" placeholder="搜尋社群 ID、LINE、備註"><select id="filterPartner"></select><select id="filterStatus"></select><select id="sortMode"><option value="created" selected>最新入庫</option><option value="updated">最近更新</option><option value="price_desc">金額高到低</option></select><button class="sync" onclick="prepareInventoryList(true)">同步</button></div><div id="inventoryContainer" class="records"><div class="empty">載入中...</div></div><button id="loadMoreBtn" class="load-more" onclick="loadMoreInventory()">載入更多</button></section><aside class="panel pick-panel"><div class="panel-head"><h2>已選明細</h2><span class="chip green" id="pickStatCount">0 件</span></div><div id="pickSummary" class="pick-list"><div class="empty">尚未選取商品</div></div><div class="total"><div class="total-line"><span>本次預計收款</span><strong id="pickTotalAmount"></strong></div><input id="pickCollectorName" placeholder="領取人名稱（必填）" style="width:100%; margin-bottom:10px;"><button class="clear-pick" id="clearPickBtn" onclick="clearPickList()" disabled>清空已選</button><button class="finish" id="createPickSheetBtn" onclick="confirmPickAndShowSheet()" disabled>結案並產生明細表</button></div></aside></section>
+  </section>
+</main>
+<script src="live-demo.js"></script></body></html>
