@@ -1,0 +1,363 @@
+﻿<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>智慧庫存 index2 - 桌機雙欄操作台</title><style>
+    :root {
+      --bg: #eef3f7;
+      --panel: #ffffff;
+      --soft: #f7fafc;
+      --ink: #17212b;
+      --muted: #647483;
+      --line: #dce5ec;
+      --blue: #1769d6;
+      --green: #157347;
+      --amber: #a86107;
+      --red: #b42318;
+      --shadow: 0 10px 28px rgba(22, 35, 49, .08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+      letter-spacing: 0;
+    }
+    button, input, select { font: inherit; }
+    .desk {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+    .top {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    h1 { margin: 0; font-size: 26px; line-height: 1.15; }
+    .top small { color: var(--muted); display: block; margin-top: 5px; }
+    .top-actions { display: flex; gap: 8px; align-items: center; }
+    .btn {
+      height: 42px;
+      padding: 0 14px;
+      border: 1px solid #cfdbe5;
+      border-radius: 8px;
+      background: #fff;
+      color: #314557;
+      font-weight: 800;
+    }
+    .btn.primary { border: 0; color: #fff; background: var(--blue); }
+    .nav {
+      display: inline-grid;
+      grid-template-columns: repeat(3, 116px);
+      gap: 6px;
+      padding: 6px;
+      background: #dfe8ef;
+      border-radius: 8px;
+      margin-bottom: 14px;
+    }
+    .nav button {
+      height: 38px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #526579;
+      font-weight: 900;
+    }
+    .nav .active {
+      background: #fff;
+      color: var(--blue);
+      box-shadow: 0 3px 10px rgba(22, 35, 49, .08);
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.2fr repeat(3, minmax(0, .55fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .hero-card, .kpi {
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      box-shadow: var(--shadow);
+    }
+    .hero-card {
+      min-height: 146px;
+      color: #fff;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: end;
+      background:
+        linear-gradient(90deg, rgba(17, 34, 51, .95), rgba(17, 34, 51, .35)),
+        url("https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1000&q=80") center/cover;
+    }
+    .hero-card h2 { margin: 0 0 6px; font-size: 23px; }
+    .hero-card p { margin: 0; color: rgba(255,255,255,.82); }
+    .kpi { padding: 15px; }
+    .kpi span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+    .kpi strong { font-size: 25px; }
+    .kpi em { display: block; margin-top: 8px; color: var(--green); font-style: normal; font-size: 12px; font-weight: 800; }
+    .work-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 14px;
+      align-items: start;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .panel-head {
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .panel-head h2 { margin: 0; font-size: 18px; }
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1fr 150px 150px 150px auto;
+      gap: 8px;
+      padding: 12px 14px;
+      background: var(--soft);
+      border-bottom: 1px solid var(--line);
+    }
+    input, select {
+      height: 40px;
+      border: 1px solid #cbd8e2;
+      border-radius: 8px;
+      background: #fff;
+      padding: 0 10px;
+      min-width: 0;
+    }
+    .sync {
+      border: 0;
+      border-radius: 8px;
+      background: #e8f1ff;
+      color: var(--blue);
+      font-weight: 900;
+      padding: 0 13px;
+    }
+    .records {
+      padding: 12px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .record {
+      border: 1px solid #e1e9ef;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .record-top {
+      display: grid;
+      grid-template-columns: 86px 1fr;
+      gap: 11px;
+      padding: 10px;
+    }
+    .record img {
+      width: 86px;
+      height: 86px;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 1px solid #e1e9ef;
+    }
+    .record h3 {
+      margin: 0 0 4px;
+      font-size: 17px;
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .note {
+      display: inline-block;
+      max-width: 100%;
+      padding: 5px 8px;
+      border-radius: 7px;
+      background: #f1f5f8;
+      color: #3d5060;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .record-bottom {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+      align-items: center;
+      padding: 9px 10px;
+      border-top: 1px solid var(--line);
+      background: #fbfdff;
+    }
+    .money { font-weight: 900; color: var(--green); font-size: 18px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 8px;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .chip.green { background: #e8f7ef; color: var(--green); }
+    .chip.amber { background: #fff2db; color: var(--amber); }
+    .chip.blue { background: #e8f1ff; color: #155bc0; }
+    .mini-actions { display: flex; gap: 6px; }
+    .icon {
+      width: 34px;
+      height: 34px;
+      border: 1px solid #d5e0e8;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .icon.danger { color: var(--red); background: #fff0ef; border-color: #ffd2cf; }
+    .pick-panel {
+      position: sticky;
+      top: 18px;
+    }
+    .pick-list {
+      padding: 12px;
+      display: grid;
+      gap: 9px;
+    }
+    .pick-row {
+      display: grid;
+      grid-template-columns: 58px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid #e1e9ef;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .pick-row img {
+      width: 58px;
+      height: 58px;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+    .pick-row b {
+      display: block;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .pick-row span { color: var(--muted); font-size: 12px; }
+    .remove {
+      width: 34px;
+      height: 34px;
+      border: 0;
+      border-radius: 8px;
+      color: var(--red);
+      background: #fff0ef;
+      font-weight: 900;
+    }
+    .total {
+      padding: 14px;
+      background: var(--soft);
+      border-top: 1px solid var(--line);
+    }
+    .total-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .total-line strong { color: var(--ink); font-size: 25px; }
+    .finish {
+      width: 100%;
+      height: 44px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--green);
+      color: #fff;
+      font-weight: 900;
+    }
+    @media (max-width: 1050px) {
+      .hero-grid { grid-template-columns: repeat(2, 1fr); }
+      .work-grid { grid-template-columns: 1fr; }
+      .pick-panel { position: static; }
+    }
+    @media (max-width: 760px) {
+      .top, .toolbar, .hero-grid { grid-template-columns: 1fr; }
+      .records { grid-template-columns: 1fr; }
+      .nav { width: 100%; grid-template-columns: repeat(3, 1fr); }
+    }
+  
+.view { display: none; }
+.view.active { display: block; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 14px; }
+.form-grid .full { grid-column: 1 / -1; }
+textarea.field { height: 88px; padding-top: 10px; resize: vertical; }
+.preview { max-height: 260px; width: 100%; object-fit: contain; border-radius: 8px; background: #f1f5f8; border: 1px solid var(--line); display: none; }
+.toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(12px); z-index: 8000; background: rgba(23,33,43,.94); color: #fff; padding: 10px 14px; border-radius: 8px; opacity: 0; transition: .2s ease; pointer-events: none; }
+.toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.success { background: rgba(30,143,88,.96); }
+.toast.error { background: rgba(180,35,24,.96); }
+.record-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
+.record-controls select, .table-row select { height: 32px; border: 1px solid #cbd7e1; border-radius: 8px; background: #fff; padding: 0 8px; min-width: 0; font-size: 13px; max-width: 150px; }
+.qty-input { width: 54px; height: 34px; border: 1px solid #cbd7e1; border-radius: 8px; padding: 0 8px; }
+.mini-actions { display: grid !important; grid-template-columns: 58px 58px 38px 38px; align-items: center; gap: 6px; }
+.add-pick { border: 0; border-radius: 8px; height: 34px; padding: 0 10px; background: var(--blue); color: #fff; font-weight: 800; white-space: nowrap; min-width: 58px; }
+.mini-actions .icon { width: 38px; height: 34px; }
+.record.is-full { opacity: .62; background: #f5f7fa; }
+.record.is-full img { filter: grayscale(35%); }
+.record.is-full .money { color: #7a8793; }
+.stock-info { display: grid; gap: 2px; min-width: 116px; }
+.stock-info .amount { font-weight: 900; color: var(--green); font-size: 18px; line-height: 1.15; }
+.stock-info .remain { color: #526579; font-size: 12px; font-weight: 800; }
+.record.is-full .stock-info .amount, .record.is-full .stock-info .remain { color: #7a8793; }
+.qty-input:disabled { background: #eef2f5; color: #8a98a6; cursor: not-allowed; }
+.add-pick:disabled, .icon:disabled { background: #e1e7ed !important; color: #7a8793 !important; cursor: not-allowed; border-color: #d4dde5 !important; }
+.chip.full { background: #eef2f6; color: #647483; }
+.pick-row div span, .pick-card div span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clear-pick { width: 100%; height: 38px; border: 1px solid #d5e0e8; border-radius: 8px; background: #fff; color: #526579; font-weight: 800; margin-bottom: 8px; }
+.clear-pick:disabled { background: #eef2f5; color: #99a6b2; cursor: not-allowed; }
+.empty { padding: 26px; color: var(--muted); text-align: center; }
+.load-more { margin: 0 12px 12px; height: 42px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; font-weight: 800; }
+.modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(10,20,30,.48); z-index: 7000; padding: 16px; }
+.modal.open { display: flex; }
+.modal-card { width: min(420px, 100%); background: #fff; border-radius: 8px; padding: 16px; box-shadow: var(--shadow, 0 10px 28px rgba(22,35,49,.12)); }
+.modal-card h3 { margin: 0 0 10px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 10px; }
+.modal-actions button { flex: 1; height: 42px; border: 0; border-radius: 8px; font-weight: 800; }
+.viewer { position: fixed; inset: 0; z-index: 7500; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.88); cursor: zoom-out; }
+.viewer.open { display: flex; }
+.viewer img { max-width: 94vw; max-height: 92vh; border-radius: 8px; }
+.print-overlay { position: fixed; inset: 0; z-index: 7600; display: none; overflow: auto; background: #fff; padding: 20px; }
+.print-overlay.open { display: block; }
+.print-card { max-width: 900px; margin: 0 auto; }
+.print-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.print-table td, .print-table th { border-bottom: 1px solid #e5edf3; padding: 10px; text-align: left; }
+.print-img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; }
+@media print { body > *:not(.print-overlay) { display: none !important; } .print-overlay { display: block !important; position: static !important; padding: 0 !important; } .no-print { display: none !important; } }</style></head><body data-theme="desk"><div id="toast" class="toast" role="status" aria-live="polite"></div>
+<div id="imageViewer" class="viewer" onclick="this.classList.remove('open')"><img id="fullImage" alt="預覽圖"></div>
+<div id="noteModal" class="modal"><div class="modal-card"><h3>修改備註</h3><textarea id="editNoteInput" class="field" style="width:100%; height:120px;"></textarea><input type="hidden" id="editNoteRow"><div class="modal-actions"><button onclick="closeNoteModal()" style="background:#eef2f6; color:#40515f;">取消</button><button onclick="saveNote()" style="background:var(--blue); color:#fff;">儲存</button></div></div></div>
+<div id="printOverlay" class="print-overlay"><div class="print-card"><h1 style="text-align:center;">商品明細表</h1><p><b>領取人：</b><span id="resName"></span>　<b>時間：</b><span id="resTime"></span></p><table class="print-table"><tbody id="resTableBody"></tbody></table><h2 style="text-align:right;">總計 <span id="resTotal"></span></h2><div class="no-print" style="display:flex; gap:10px; margin-top:18px;"><button class="primary" id="finalConfirmBtn" onclick="finalCommitToGoogle()">確認出貨</button><button class="btn" onclick="window.print()">列印/PDF</button><button class="btn" onclick="document.getElementById('printOverlay').classList.remove('open')">返回修改</button></div></div></div>
+<main class="desk">
+  <header class="top"><div><h1>智慧庫存工作台</h1><small id="syncTime">尚未同步</small></div><div class="top-actions"><button class="btn" onclick="window.print()">匯出明細</button><button class="btn primary" data-view="addView">新增入庫</button></div></header>
+  <nav class="nav"><button data-view="addView">入庫</button><button class="active" data-view="recordView">紀錄</button><button data-view="recordView">檢貨</button></nav>
+  <section id="addView" class="view"><section class="panel"><div class="panel-head"><h2>拍照入庫</h2><span class="chip blue">Drive 圖片上傳</span></div><div class="form-grid"><input class="field full" type="file" id="cameraInput" accept="image/*" capture="environment"><img id="preview" class="preview full" alt="圖片預覽"><input class="field" id="inCommName" list="commSuggestions" placeholder="社群 ID（必填）"><datalist id="commSuggestions"></datalist><input class="field" id="inLineName" placeholder="LINE ID"><input class="field" id="inQty" type="number" value="1" min="1" placeholder="數量"><input class="field" id="inPrice" type="number" min="0" placeholder="金額"><select class="field" id="inPartner"></select><select class="field" id="inStatus"></select><textarea class="field full" id="inNote" placeholder="備註"></textarea><button class="primary full" id="inBtn" onclick="addToInventory()">確認同步入庫</button></div></section></section>
+  <section id="recordView" class="view active">
+    <section class="hero-grid"><div class="hero-card"><h2>今日庫存工作</h2><p id="syncState">雲端待同步</p></div><div class="kpi"><span>庫存筆數</span><strong id="statCount">0</strong><em>已同步</em></div><div class="kpi"><span>已載入件數</span><strong id="statQty">0</strong><em>目前畫面</em></div><div class="kpi"><span>已載入金額</span><strong id="statCash"></strong><em>目前畫面</em></div></section>
+    <section class="work-grid"><section class="panel"><div class="panel-head"><h2>庫存紀錄</h2><span class="chip blue" id="loadInfo">載入 0 / 0</span></div><div class="toolbar"><input id="filterID" placeholder="搜尋社群 ID、LINE、備註"><select id="filterPartner"></select><select id="filterStatus"></select><select id="sortMode"><option value="created" selected>最新入庫</option><option value="updated">最近更新</option><option value="price_desc">金額高到低</option></select><button class="sync" onclick="prepareInventoryList(true)">同步</button></div><div id="inventoryContainer" class="records"><div class="empty">載入中...</div></div><button id="loadMoreBtn" class="load-more" onclick="loadMoreInventory()">載入更多</button></section><aside class="panel pick-panel"><div class="panel-head"><h2>已選明細</h2><span class="chip green" id="pickStatCount">0 件</span></div><div id="pickSummary" class="pick-list"><div class="empty">尚未選取商品</div></div><div class="total"><div class="total-line"><span>本次預計收款</span><strong id="pickTotalAmount"></strong></div><input id="pickCollectorName" placeholder="領取人名稱（必填）" style="width:100%; margin-bottom:10px;"><button class="clear-pick" id="clearPickBtn" onclick="clearPickList()" disabled>清空已選</button><button class="finish" id="createPickSheetBtn" onclick="confirmPickAndShowSheet()" disabled>結案並產生明細表</button></div></aside></section>
+  </section>
+</main>
+<script src="live-demo.js"></script></body></html>
