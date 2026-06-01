@@ -120,6 +120,13 @@
       gap: 12px;
     }
     .panel-head h2 { margin: 0; font-size: 18px; }
+    .panel-head-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
     .toolbar {
       display: grid;
       grid-template-columns: 1fr 150px 150px 150px auto;
@@ -350,7 +357,7 @@ textarea.field { height: 88px; padding-top: 10px; resize: vertical; }
 .add-pick:disabled, .icon:disabled { background: #e1e7ed !important; color: #7a8793 !important; cursor: not-allowed; border-color: #d4dde5 !important; }
 .chip.full { background: #eef2f6; color: #647483; }
 .pick-row div span, .pick-card div span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.clear-pick { width: 100%; height: 38px; border: 1px solid #d5e0e8; border-radius: 8px; background: #fff; color: #526579; font-weight: 800; margin-bottom: 8px; }
+.clear-pick { height: 30px; border: 1px solid #d5e0e8; border-radius: 8px; background: #fff; color: #526579; font-weight: 800; padding: 0 10px; white-space: nowrap; }
 .clear-pick:disabled { background: #eef2f5; color: #99a6b2; cursor: not-allowed; }
 .empty { padding: 26px; color: var(--muted); text-align: center; }
 .load-more { margin: 0 12px 12px; height: 42px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; font-weight: 800; }
@@ -379,7 +386,7 @@ textarea.field { height: 88px; padding-top: 10px; resize: vertical; }
   <section id="addView" class="view"><section class="panel"><div class="panel-head"><h2>拍照入庫</h2><span class="chip blue">Drive 圖片上傳</span></div><div class="form-grid"><input class="field full" type="file" id="cameraInput" accept="image/*" capture="environment"><img id="preview" class="preview full" alt="圖片預覽"><input class="field" id="inCommName" list="commSuggestions" placeholder="社群 ID（必填）"><datalist id="commSuggestions"></datalist><input class="field" id="inLineName" placeholder="LINE ID"><input class="field" id="inQty" type="number" value="1" min="1" placeholder="數量"><input class="field" id="inPrice" type="number" min="0" placeholder="金額"><select class="field" id="inPartner"></select><select class="field" id="inStatus"></select><textarea class="field full" id="inNote" placeholder="備註"></textarea><button class="primary full" id="inBtn" onclick="addToInventory()">確認同步入庫</button></div></section></section>
   <section id="recordView" class="view active">
     <section class="hero-grid"><div class="hero-card"><h2>今日庫存工作</h2><p id="syncState">雲端待同步</p></div><div class="kpi"><span>庫存筆數</span><strong id="statCount">0</strong><em>已同步</em></div><div class="kpi"><span>已載入件數</span><strong id="statQty">0</strong><em>目前畫面</em></div><div class="kpi"><span>已載入金額</span><strong id="statCash"></strong><em>目前畫面</em></div></section>
-    <section class="work-grid"><section class="panel"><div class="panel-head"><h2>庫存紀錄</h2><span class="chip blue" id="loadInfo">載入 0 / 0</span></div><div class="toolbar"><input id="filterID" placeholder="搜尋社群 ID、LINE、備註"><select id="filterPartner"></select><select id="filterStatus"></select><select id="sortMode"><option value="created" selected>最新入庫</option><option value="updated">最近更新</option><option value="price_desc">金額高到低</option></select><button class="sync" onclick="prepareInventoryList(true)">同步</button></div><div id="inventoryContainer" class="records"><div class="empty">載入中...</div></div><button id="loadMoreBtn" class="load-more" onclick="loadMoreInventory()">載入更多</button></section><aside class="panel pick-panel"><div class="panel-head"><h2>已選明細</h2><span class="chip green" id="pickStatCount">0 件</span></div><div id="pickSummary" class="pick-list"><div class="empty">尚未選取商品</div></div><div class="total"><div class="total-line"><span>本次預計收款</span><strong id="pickTotalAmount"></strong></div><input id="pickCollectorName" placeholder="領取人名稱（必填）" style="width:100%; margin-bottom:10px;"><button class="clear-pick" id="clearPickBtn" onclick="clearPickList()" disabled>清空已選</button><button class="finish" id="createPickSheetBtn" onclick="confirmPickAndShowSheet()" disabled>結案並產生明細表</button></div></aside></section>
+    <section class="work-grid"><section class="panel"><div class="panel-head"><h2>庫存紀錄</h2><div class="panel-head-actions"><button class="sync" onclick="addLoadedRecordsToPickList()">全選</button><span class="chip blue" id="loadInfo">載入 0 / 0</span></div></div><div class="toolbar"><input id="filterID" placeholder="模糊搜尋社群 ID、LINE、備註"><select id="filterPartner"></select><select id="filterStatus"></select><select id="sortMode"><option value="created" selected>最新入庫</option><option value="updated">最近更新</option><option value="price_desc">金額高到低</option></select><button class="sync" onclick="prepareInventoryList(true)">同步</button></div><div id="inventoryContainer" class="records"><div class="empty">載入中...</div></div><button id="loadMoreBtn" class="load-more" onclick="loadMoreInventory()">載入更多</button></section><aside class="panel pick-panel"><div class="panel-head"><h2>已選明細</h2><div class="panel-head-actions"><button class="clear-pick" id="clearPickBtn" onclick="clearPickList()" disabled>全部清除</button><span class="chip green" id="pickStatCount">0 件</span></div></div><div id="pickSummary" class="pick-list"><div class="empty">尚未選取商品</div></div><div class="total"><div class="total-line"><span>本次預計收款</span><strong id="pickTotalAmount"></strong></div><input id="pickCollectorName" placeholder="領取人名稱（必填）" style="width:100%; margin-bottom:10px;"><button class="finish" id="createPickSheetBtn" onclick="confirmPickAndShowSheet()" disabled>結案並產生明細表</button></div></aside></section>
   </section>
 </main>
 <script src="live-demo.js"></script></body></html>

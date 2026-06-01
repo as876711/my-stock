@@ -130,7 +130,8 @@ async function prepareInventoryList(reset = false) {
   if (reset) inventoryPage = 1;
   if ($('inventoryContainer')) $('inventoryContainer').innerHTML = emptyMarkup('載入中...');
   try {
-    const data = await apiGet({ mode:'list', page: inventoryPage, pageSize: PAGE_SIZE, keyword: $('filterID')?.value.trim() || '', partner: $('filterPartner')?.value || '', status: $('filterStatus')?.value || '', sort: getBackendSortMode() });
+    const keyword = $('filterID')?.value.trim() || '';
+    const data = keyword ? await fetchFuzzyInventory(keyword) : await fetchInventoryPage(inventoryPage, PAGE_SIZE, '');
     if (data.ok === false) throw new Error(data.message || '讀取失敗');
     rawStockData = Array.isArray(data.items) ? data.items : [];
     inventoryTotal = Number(data.total || rawStockData.length);
@@ -143,6 +144,81 @@ async function prepareInventoryList(reset = false) {
     if ($('inventoryContainer')) $('inventoryContainer').innerHTML = emptyMarkup('讀取失敗，請稍後再試。');
     showToast(err.message || '讀取失敗', 'error');
   }
+}
+async function fetchInventoryPage(page, pageSize, keyword = '') {
+  return apiGet({
+    mode: 'list',
+    page,
+    pageSize,
+    keyword,
+    partner: $('filterPartner')?.value || '',
+    status: $('filterStatus')?.value || '',
+    sort: getBackendSortMode()
+  });
+}
+async function fetchFuzzyInventory(keyword) {
+  const pageSize = 100;
+  let page = 1;
+  let hasMore = true;
+  const allItems = [];
+
+  while (hasMore && page <= 10) {
+    const data = await fetchInventoryPage(page, pageSize, '');
+    if (data.ok === false) return data;
+    const items = Array.isArray(data.items) ? data.items : [];
+    allItems.push(...items);
+    hasMore = Boolean(data.hasMore);
+    page += 1;
+  }
+
+  const items = allItems.filter(item => fuzzyItemMatches(item, keyword));
+  return {
+    ok: true,
+    page: 1,
+    pageSize,
+    total: items.length,
+    hasMore: false,
+    items
+  };
+}
+function fuzzyItemMatches(item, keyword) {
+  const tokens = splitSearchTokens(keyword);
+  if (!tokens.length) return true;
+  const fields = [
+    item.communityName,
+    item.lineName,
+    item.note,
+    item.partner,
+    item.status,
+    item.rowId
+  ].map(normalizeSearchText).filter(Boolean);
+  const combined = fields.join('');
+  return tokens.every(token => fields.some(field => fuzzyTextMatches(field, token)) || fuzzyTextMatches(combined, token));
+}
+function splitSearchTokens(value) {
+  return String(value || '')
+    .trim()
+    .split(/\s+/)
+    .map(normalizeSearchText)
+    .filter(Boolean);
+}
+function normalizeSearchText(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s\-_.,/\\|@#:$%^&*+=!?~`'"()[\]{}<>，。、；：！？「」『』（）【】《》]/g, '');
+}
+function fuzzyTextMatches(text, token) {
+  if (!token) return true;
+  if (!text) return false;
+  if (text.includes(token)) return true;
+  if (token.length < 2) return false;
+  let pos = 0;
+  for (const char of text) {
+    if (char === token[pos]) pos += 1;
+    if (pos === token.length) return true;
+  }
+  return false;
 }
 function handleCommunityTyping() {
   const keyword = $('inCommName')?.value.trim() || '';
@@ -249,7 +325,7 @@ async function loadMoreInventory() {
   if (!inventoryHasMore) return;
   inventoryPage += 1;
   try {
-    const data = await apiGet({ mode:'list', page: inventoryPage, pageSize: PAGE_SIZE, keyword: $('filterID')?.value.trim() || '', partner: $('filterPartner')?.value || '', status: $('filterStatus')?.value || '', sort: getBackendSortMode() });
+    const data = await fetchInventoryPage(inventoryPage, PAGE_SIZE, $('filterID')?.value.trim() || '');
     rawStockData = rawStockData.concat(Array.isArray(data.items) ? data.items : []);
     inventoryTotal = Number(data.total || rawStockData.length);
     inventoryHasMore = Boolean(data.hasMore);
@@ -357,6 +433,32 @@ function addPick(row) {
   renderSummary();
   renderRecords();
 }
+function addLoadedRecordsToPickList() {
+  const rows = sortRecords(rawStockData);
+  if (!rows.length) return showToast('目前沒有可加入的紀錄', 'error');
+
+  let addedRows = 0;
+  let addedQty = 0;
+  rows.forEach(item => {
+    const stockQty = Number(item.qty || 0);
+    if (!Number.isFinite(stockQty) || stockQty <= 0) return;
+
+    const existing = tempPickList.find(p => Number(p.row) === Number(item.row));
+    const alreadyPicked = existing ? Number(existing.pickQty || 0) : 0;
+    const remaining = stockQty - alreadyPicked;
+    if (remaining <= 0) return;
+
+    if (existing) existing.pickQty = alreadyPicked + remaining;
+    else tempPickList.push({ ...item, pickQty: remaining });
+    addedRows += 1;
+    addedQty += remaining;
+  });
+
+  if (!addedRows) return showToast('目前紀錄都已選滿', 'error');
+  renderSummary();
+  renderRecords();
+  showToast(`已加入 ${addedRows} 筆，共 ${addedQty} 件`, 'success');
+}
 function renderSummary() {
   let totalQty = 0, total = 0;
   const groups = new Map();
@@ -460,20 +562,10 @@ function confirmPickAndShowSheet() {
   const name = $('pickCollectorName').value.trim(); if (!name || !tempPickList.length) return showToast('請填寫領取人並選取商品', 'error');
   const validation = validatePickList();
   if (!validation.ok) return showToast(validation.message, 'error');
-  $('resName').textContent = name; $('resTime').textContent = new Date().toLocaleDateString('zh-TW'); let total = 0, totalQty = 0;
+  $('resName').textContent = name; $('resTime').textContent = new Date().toLocaleDateString('zh-TW'); let total = 0;
   $('resTableBody').innerHTML = tempPickList.map(item => { const qty = Number(item.pickQty || 0); const subtotal = qty * Number(item.price || 0); total += subtotal; const image = escapeAttr(item.image || item.thumbnailUrl || 'https://via.placeholder.com/100?text=無圖'); return `<tr><td style="width:116px"><img class="print-img" src="${image}"></td><td><b>${escapeHTML(item.communityName || item.lineName || '無')}</b><br>${escapeHTML(item.note || '')}</td><td>${qty} 件</td><td>${money(subtotal)}</td></tr>`; }).join('');
-  totalQty = tempPickList.reduce((sum, item) => sum + Number(item.pickQty || 0), 0);
-  ensureSummaryBox();
-  $('resSummary').innerHTML = `<b>結案確認：</b>領取人 ${escapeHTML(name)}，共 ${totalQty} 件，總金額 ${money(total)}。按下「確認出貨」後會正式扣庫存。`;
+  if ($('resSummary')) $('resSummary').remove();
   $('resTotal').textContent = money(total); $('printOverlay').classList.add('open');
-}
-function ensureSummaryBox() {
-  if ($('resSummary')) return;
-  const box = document.createElement('div');
-  box.id = 'resSummary';
-  box.style.cssText = 'margin:12px 0; padding:12px; border:1px solid #bde5cf; background:#effbf4; color:#146c42; border-radius:8px;';
-  const table = $('resTableBody')?.closest('table');
-  table?.parentNode.insertBefore(box, table);
 }
 function validatePickList() {
   for (const picked of tempPickList) {
