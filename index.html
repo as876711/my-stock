@@ -203,10 +203,10 @@
     }
     .record-bottom {
       display: grid;
-      grid-template-columns: 1fr auto auto;
-      gap: 8px;
+      grid-template-columns: minmax(78px, 1fr) auto auto;
+      gap: 6px;
       align-items: center;
-      padding: 9px 10px;
+      padding: 9px 8px 9px 10px;
       border-top: 1px solid var(--line);
       background: #fbfdff;
     }
@@ -262,6 +262,18 @@
     .pick-group-head span {
       color: #526579;
       font-size: 12px;
+      white-space: nowrap;
+    }
+    .fill-collector {
+      margin-left: auto;
+      height: 24px;
+      border: 1px solid #bdd2e8;
+      border-radius: 7px;
+      background: #fff;
+      color: #1769d6;
+      font-size: 12px;
+      font-weight: 900;
+      padding: 0 8px;
       white-space: nowrap;
     }
     .pick-row {
@@ -342,14 +354,14 @@ textarea.field { height: 88px; padding-top: 10px; resize: vertical; }
 .toast.error { background: rgba(180,35,24,.96); }
 .record-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
 .record-controls select, .table-row select { height: 32px; border: 1px solid #cbd7e1; border-radius: 8px; background: #fff; padding: 0 8px; min-width: 0; font-size: 13px; max-width: 150px; }
-.qty-input { width: 54px; height: 34px; border: 1px solid #cbd7e1; border-radius: 8px; padding: 0 8px; }
-.mini-actions { display: grid !important; grid-template-columns: 58px 58px 38px 38px; align-items: center; gap: 6px; }
-.add-pick { border: 0; border-radius: 8px; height: 34px; padding: 0 10px; background: var(--blue); color: #fff; font-weight: 800; white-space: nowrap; min-width: 58px; }
-.mini-actions .icon { width: 38px; height: 34px; }
+.qty-input { width: 50px; height: 34px; border: 1px solid #cbd7e1; border-radius: 8px; padding: 0 8px; }
+.mini-actions { display: grid !important; grid-template-columns: 50px 54px 34px 34px; align-items: center; gap: 5px; justify-content: end; }
+.add-pick { border: 0; border-radius: 8px; height: 34px; padding: 0 8px; background: var(--blue); color: #fff; font-weight: 800; white-space: nowrap; min-width: 54px; }
+.mini-actions .icon { width: 34px; height: 34px; }
 .record.is-full { opacity: .62; background: #f5f7fa; }
 .record.is-full img { filter: grayscale(35%); }
 .record.is-full .money { color: #7a8793; }
-.stock-info { display: grid; gap: 2px; min-width: 116px; }
+.stock-info { display: grid; gap: 2px; min-width: 78px; }
 .stock-info .amount { font-weight: 900; color: var(--green); font-size: 18px; line-height: 1.15; }
 .stock-info .remain { color: #526579; font-size: 12px; font-weight: 800; }
 .record.is-full .stock-info .amount, .record.is-full .stock-info .remain { color: #7a8793; }

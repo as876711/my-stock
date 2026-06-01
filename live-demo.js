@@ -483,13 +483,18 @@ function renderSummary() {
       const note = item.note ? `<span title="${escapeAttr(item.note)}">備註：${escapeHTML(item.note)}</span>` : '<span>無備註</span>';
       return `<div class="${cls}"><img src="${image}" onclick="viewImage(this.src)" onerror="this.src='https://via.placeholder.com/80?text=無圖'"><div><b>${escapeHTML(item.communityName || item.lineName || '無')}</b><span>${qty} 件 · ${money(qty * price)}</span>${note}</div><button class="remove" onclick="removeItem(${idx})">×</button></div>`;
     }).join('');
-    return `<section class="pick-group"><div class="pick-group-head"><b>${escapeHTML(group.label)}</b><span>${group.qty} 件 · ${money(group.total)}</span></div>${rows}</section>`;
+    return `<section class="pick-group"><div class="pick-group-head"><b>${escapeHTML(group.label)}</b><button class="fill-collector" onclick="fillCollectorName(decodeURIComponent('${noteArg(group.label)}'))">帶入</button><span>${group.qty} 件 · ${money(group.total)}</span></div>${rows}</section>`;
   }).join('');
   $('pickSummary').innerHTML = html || '<div class="empty">尚未選取商品</div>';
   setText('pickStatCount', `${totalQty} 件`);
   setText('pickTotalAmount', money(total));
   if ($('createPickSheetBtn')) $('createPickSheetBtn').disabled = tempPickList.length === 0;
   if ($('clearPickBtn')) $('clearPickBtn').disabled = tempPickList.length === 0;
+}
+function fillCollectorName(name) {
+  if (!$('pickCollectorName')) return;
+  $('pickCollectorName').value = String(name || '').trim();
+  showToast('已帶入領取人', 'success');
 }
 function removeItem(idx) {
   tempPickList.splice(idx, 1);
