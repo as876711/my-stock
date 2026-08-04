@@ -2,6 +2,7 @@
 const DEFAULT_PARTNERS = ["萌寶目錄預購","東京速換金","妮小舖","NAZI夏批發","香港中國同行批發","橙日(日本奇異果)","ココ購","日和優選","東京買買","自行購買","尚未安排"];
 const DEFAULT_STATUS_OPTS = ["📝 已登記","🛒 已採買","❌ 尚未買","⚠️ 缺貨","📦 已到貨","✅ 出貨完成"];
 const PAGE_SIZE = 30;
+const SEARCH_DEBOUNCE_MS = 650;
 let partners = [...DEFAULT_PARTNERS];
 let statusOpts = [...DEFAULT_STATUS_OPTS];
 let rawStockData = [];
@@ -14,6 +15,8 @@ let toastTimer = null;
 let communitySuggestions = [];
 let communityQueryCache = new Set();
 let lastAutoLineId = "";
+let fuzzySearchEnabled = false;
+let inventoryQueryCache = new Map();
 
 const $ = id => document.getElementById(id);
 const theme = () => document.body.dataset.theme || "desk";
@@ -26,8 +29,13 @@ function debounce(fn, delay) { let timer; return (...args) => { clearTimeout(tim
 
 function init() {
   renderOptionSelects();
+  updateFuzzyToggle();
   document.querySelectorAll('[data-view]').forEach(btn => btn.addEventListener('click', () => showView(btn.dataset.view, btn)));
-  $('filterID')?.addEventListener('input', debounce(() => prepareInventoryList(true), 300));
+  const debouncedSearch = debounce(() => prepareInventoryList(true), SEARCH_DEBOUNCE_MS);
+  $('filterID')?.addEventListener('input', debouncedSearch);
+  $('filterID')?.addEventListener('keydown', event => {
+    if (event.key === 'Enter') prepareInventoryList(true);
+  });
   $('filterPartner')?.addEventListener('change', () => prepareInventoryList(true));
   $('filterStatus')?.addEventListener('change', () => prepareInventoryList(true));
   $('sortMode')?.addEventListener('change', () => {
@@ -122,6 +130,7 @@ async function waitForWriteResult(requestId) {
 }
 async function postToGoogle(payload) {
   const requestId = payload.requestId || newRequestId();
+  clearInventoryCache();
   await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...payload, requestId }) });
   return waitForWriteResult(requestId);
 }
@@ -131,7 +140,7 @@ async function prepareInventoryList(reset = false) {
   if ($('inventoryContainer')) $('inventoryContainer').innerHTML = emptyMarkup('載入中...');
   try {
     const keyword = $('filterID')?.value.trim() || '';
-    const data = keyword ? await fetchFuzzyInventory(keyword) : await fetchInventoryPage(inventoryPage, PAGE_SIZE, '');
+    const data = isFuzzySearchActive(keyword) ? await fetchFuzzyInventory(keyword) : await fetchInventoryPage(inventoryPage, PAGE_SIZE, keyword);
     if (data.ok === false) throw new Error(data.message || '讀取失敗');
     rawStockData = Array.isArray(data.items) ? data.items : [];
     inventoryTotal = Number(data.total || rawStockData.length);
@@ -145,8 +154,40 @@ async function prepareInventoryList(reset = false) {
     showToast(err.message || '讀取失敗', 'error');
   }
 }
+function syncInventoryList() {
+  clearInventoryCache();
+  prepareInventoryList(true);
+}
+function toggleFuzzySearch() {
+  fuzzySearchEnabled = !fuzzySearchEnabled;
+  updateFuzzyToggle();
+  prepareInventoryList(true);
+}
+function updateFuzzyToggle() {
+  const btn = $('fuzzyToggleBtn');
+  if (!btn) return;
+  btn.textContent = fuzzySearchEnabled ? '模糊開' : '模糊關';
+  btn.classList.toggle('active', fuzzySearchEnabled);
+}
+function isFuzzySearchActive(keyword) {
+  return fuzzySearchEnabled && normalizeSearchText(keyword).length >= 2;
+}
+function clearInventoryCache() {
+  inventoryQueryCache.clear();
+}
+function inventoryCacheKey(type, params) {
+  return JSON.stringify({
+    type,
+    ...params,
+    partner: $('filterPartner')?.value || '',
+    status: $('filterStatus')?.value || '',
+    sort: getBackendSortMode()
+  });
+}
 async function fetchInventoryPage(page, pageSize, keyword = '') {
-  return apiGet({
+  const key = inventoryCacheKey('page', { page, pageSize, keyword });
+  if (inventoryQueryCache.has(key)) return inventoryQueryCache.get(key);
+  const data = await apiGet({
     mode: 'list',
     page,
     pageSize,
@@ -155,8 +196,12 @@ async function fetchInventoryPage(page, pageSize, keyword = '') {
     status: $('filterStatus')?.value || '',
     sort: getBackendSortMode()
   });
+  inventoryQueryCache.set(key, data);
+  return data;
 }
 async function fetchFuzzyInventory(keyword) {
+  const key = inventoryCacheKey('fuzzy', { keyword: normalizeSearchText(keyword) });
+  if (inventoryQueryCache.has(key)) return inventoryQueryCache.get(key);
   const pageSize = 100;
   let page = 1;
   let hasMore = true;
@@ -172,7 +217,7 @@ async function fetchFuzzyInventory(keyword) {
   }
 
   const items = allItems.filter(item => fuzzyItemMatches(item, keyword));
-  return {
+  const result = {
     ok: true,
     page: 1,
     pageSize,
@@ -180,6 +225,8 @@ async function fetchFuzzyInventory(keyword) {
     hasMore: false,
     items
   };
+  inventoryQueryCache.set(key, result);
+  return result;
 }
 function fuzzyItemMatches(item, keyword) {
   const tokens = splitSearchTokens(keyword);
@@ -481,7 +528,8 @@ function renderSummary() {
       const image = escapeAttr(item.image || item.thumbnailUrl || 'https://via.placeholder.com/80?text=無圖');
       const cls = theme() === 'table' ? 'pick-card' : 'pick-row';
       const note = item.note ? `<span title="${escapeAttr(item.note)}">備註：${escapeHTML(item.note)}</span>` : '<span>無備註</span>';
-      return `<div class="${cls}"><img src="${image}" onclick="viewImage(this.src)" onerror="this.src='https://via.placeholder.com/80?text=無圖'"><div><b>${escapeHTML(item.communityName || item.lineName || '無')}</b><span>${qty} 件 · ${money(qty * price)}</span>${note}</div><button class="remove" onclick="removeItem(${idx})">×</button></div>`;
+      const maxQty = Math.max(1, Number(item.qty || qty || 1));
+      return `<div class="${cls}"><img src="${image}" onclick="viewImage(this.src)" onerror="this.src='https://via.placeholder.com/80?text=無圖'"><div class="pick-main"><b>${escapeHTML(item.communityName || item.lineName || '無')}</b><div class="pick-line"><span class="pick-qty-control"><button onclick="adjustPickedQty(${idx}, -1)">−</button><input type="number" min="1" max="${maxQty}" value="${qty}" onchange="setPickedQty(${idx}, this.value)"><button onclick="adjustPickedQty(${idx}, 1)">+</button></span><span class="pick-subtotal">${money(qty * price)}</span></div>${note}</div><button class="remove" onclick="removeItem(${idx})">×</button></div>`;
     }).join('');
     return `<section class="pick-group"><div class="pick-group-head"><b>${escapeHTML(group.label)}</b><button class="fill-collector" onclick="fillCollectorName(decodeURIComponent('${noteArg(group.label)}'))">帶入</button><span>${group.qty} 件 · ${money(group.total)}</span></div>${rows}</section>`;
   }).join('');
@@ -495,6 +543,22 @@ function fillCollectorName(name) {
   if (!$('pickCollectorName')) return;
   $('pickCollectorName').value = String(name || '').trim();
   showToast('已帶入領取人', 'success');
+}
+function setPickedQty(idx, value) {
+  const item = tempPickList[idx];
+  if (!item) return;
+  const maxQty = Math.max(1, Number(item.qty || 1));
+  let nextQty = Math.round(Number(value || 1));
+  if (!Number.isFinite(nextQty)) nextQty = 1;
+  nextQty = Math.max(1, Math.min(maxQty, nextQty));
+  item.pickQty = nextQty;
+  renderSummary();
+  renderRecords();
+}
+function adjustPickedQty(idx, delta) {
+  const item = tempPickList[idx];
+  if (!item) return;
+  setPickedQty(idx, Number(item.pickQty || 1) + delta);
 }
 function removeItem(idx) {
   tempPickList.splice(idx, 1);
