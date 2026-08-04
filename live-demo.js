@@ -3,6 +3,7 @@ const DEFAULT_PARTNERS = ["萌寶目錄預購","東京速換金","妮小舖","NA
 const DEFAULT_STATUS_OPTS = ["📝 已登記","🛒 已採買","❌ 尚未買","⚠️ 缺貨","📦 已到貨","✅ 出貨完成"];
 const PAGE_SIZE = 30;
 const SEARCH_DEBOUNCE_MS = 650;
+const API_TIMEOUT_MS = 25000;
 let partners = [...DEFAULT_PARTNERS];
 let statusOpts = [...DEFAULT_STATUS_OPTS];
 let rawStockData = [];
@@ -17,6 +18,8 @@ let communityQueryCache = new Set();
 let lastAutoLineId = "";
 let fuzzySearchEnabled = false;
 let inventoryQueryCache = new Map();
+let inventoryRequestSeq = 0;
+let activeInventoryController = null;
 
 const $ = id => document.getElementById(id);
 const theme = () => document.body.dataset.theme || "desk";
@@ -110,12 +113,26 @@ function showView(viewId, btn) {
   if (viewId === 'recordView') prepareInventoryList(false);
 }
 
-async function apiGet(params = {}) {
+async function apiGet(params = {}, options = {}) {
   const url = new URL(GOOGLE_SCRIPT_URL);
   Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value); });
-  const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const timeoutMs = options.timeoutMs || API_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  if (options.signal) {
+    if (options.signal.aborted) controller.abort();
+    else options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  try {
+    const res = await fetch(url.toString(), { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('雲端讀取逾時，請再試一次或縮短關鍵字。');
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 function newRequestId() { return crypto.randomUUID ? crypto.randomUUID() : `req-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 async function waitForWriteResult(requestId) {
@@ -137,10 +154,16 @@ async function postToGoogle(payload) {
 
 async function prepareInventoryList(reset = false) {
   if (reset) inventoryPage = 1;
-  if ($('inventoryContainer')) $('inventoryContainer').innerHTML = emptyMarkup('載入中...');
+  const requestId = ++inventoryRequestSeq;
+  if (activeInventoryController) activeInventoryController.abort();
+  activeInventoryController = new AbortController();
+  const keyword = $('filterID')?.value.trim() || '';
+  if ($('inventoryContainer')) $('inventoryContainer').innerHTML = emptyMarkup(keyword ? `搜尋「${keyword}」中...` : '載入中...');
   try {
-    const keyword = $('filterID')?.value.trim() || '';
-    const data = isFuzzySearchActive(keyword) ? await fetchFuzzyInventory(keyword) : await fetchInventoryPage(inventoryPage, PAGE_SIZE, keyword);
+    const data = isFuzzySearchActive(keyword)
+      ? await fetchFuzzyInventory(keyword, { signal: activeInventoryController.signal })
+      : await fetchInventoryPage(inventoryPage, PAGE_SIZE, keyword, { signal: activeInventoryController.signal });
+    if (requestId !== inventoryRequestSeq) return;
     if (data.ok === false) throw new Error(data.message || '讀取失敗');
     rawStockData = Array.isArray(data.items) ? data.items : [];
     inventoryTotal = Number(data.total || rawStockData.length);
@@ -150,8 +173,11 @@ async function prepareInventoryList(reset = false) {
     setText('syncState', '雲端已同步');
     setText('syncTime', new Date().toLocaleString('zh-TW'));
   } catch (err) {
+    if (requestId !== inventoryRequestSeq) return;
     if ($('inventoryContainer')) $('inventoryContainer').innerHTML = emptyMarkup('讀取失敗，請稍後再試。');
     showToast(err.message || '讀取失敗', 'error');
+  } finally {
+    if (requestId === inventoryRequestSeq) activeInventoryController = null;
   }
 }
 function syncInventoryList() {
@@ -184,7 +210,7 @@ function inventoryCacheKey(type, params) {
     sort: getBackendSortMode()
   });
 }
-async function fetchInventoryPage(page, pageSize, keyword = '') {
+async function fetchInventoryPage(page, pageSize, keyword = '', options = {}) {
   const key = inventoryCacheKey('page', { page, pageSize, keyword });
   if (inventoryQueryCache.has(key)) return inventoryQueryCache.get(key);
   const data = await apiGet({
@@ -195,11 +221,11 @@ async function fetchInventoryPage(page, pageSize, keyword = '') {
     partner: $('filterPartner')?.value || '',
     status: $('filterStatus')?.value || '',
     sort: getBackendSortMode()
-  });
+  }, options);
   inventoryQueryCache.set(key, data);
   return data;
 }
-async function fetchFuzzyInventory(keyword) {
+async function fetchFuzzyInventory(keyword, options = {}) {
   const key = inventoryCacheKey('fuzzy', { keyword: normalizeSearchText(keyword) });
   if (inventoryQueryCache.has(key)) return inventoryQueryCache.get(key);
   const pageSize = 100;
@@ -208,7 +234,7 @@ async function fetchFuzzyInventory(keyword) {
   const allItems = [];
 
   while (hasMore && page <= 10) {
-    const data = await fetchInventoryPage(page, pageSize, '');
+    const data = await fetchInventoryPage(page, pageSize, '', options);
     if (data.ok === false) return data;
     const items = Array.isArray(data.items) ? data.items : [];
     allItems.push(...items);
